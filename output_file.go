@@ -29,6 +29,7 @@ type FileOutputConfig struct {
 	sizeLimit     unitSizeVar
 	queueLimit    int
 	append        bool
+	onClose       func(string)
 }
 
 // FileOutput output plugin
@@ -49,6 +50,10 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 	o.pathTemplate = pathTemplate
 	o.config = config
 	o.updateName()
+
+	if o.config.flushInterval == 0 {
+		o.config.flushInterval = time.Minute
+	}
 
 	// Force flushing every minute
 	go func() {
@@ -87,7 +92,10 @@ func setFileIndex(name string, idx int) string {
 	withoutExt := strings.TrimSuffix(name, ext)
 
 	if i := strings.LastIndex(withoutExt, "_"); i != -1 {
-		withoutExt = withoutExt[:i]
+		// Only prefixes with numbers counts
+		if _, err := strconv.Atoi(withoutExt[i+1:]); err == nil {
+			withoutExt = withoutExt[:i]
+		}
 	}
 
 	return withoutExt + "_" + idxS + ext
@@ -224,5 +232,9 @@ func (o *FileOutput) Close() {
 			o.writer.(*bufio.Writer).Flush()
 		}
 		o.file.Close()
+
+		if o.config.onClose != nil {
+			go o.config.onClose(o.file.Name())
+		}
 	}
 }

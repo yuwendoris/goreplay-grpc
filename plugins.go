@@ -120,6 +120,11 @@ func InitPlugins() {
 		registerPlugin(NewFileOutput, options, Settings.outputFileConfig)
 	}
 
+	for _, options := range Settings.outputS3 {
+		Settings.outputS3Config.bufferConfig = Settings.outputFileConfig
+		registerPlugin(NewS3Output, options, Settings.outputS3Config)
+	}
+
 	for _, options := range Settings.inputHTTP {
 		registerPlugin(NewHTTPInput, options)
 	}

@@ -44,6 +44,9 @@ type AppSettings struct {
 	outputFile       MultiOption
 	outputFileConfig FileOutputConfig
 
+	outputS3       MultiOption
+	outputS3Config S3OutputConfig
+
 	inputRAW              MultiOption
 	inputRAWEngine        string
 	inputRAWTrackResponse bool
@@ -96,6 +99,11 @@ func init() {
 	Settings.outputFileConfig.sizeLimit.Set("32mb")
 	flag.Var(&Settings.outputFileConfig.sizeLimit, "output-file-size-limit", "Size of each chunk. Default: 32mb")
 	flag.IntVar(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
+
+	flag.Var(&Settings.outputS3, "output-s3", "Write incoming requests to S3 path: \n\tgor --input-raw :80 --output-s3 s3://mybucket/logs/%Y-%m-%d.gz")
+	flag.StringVar(&Settings.outputS3Config.bufferPath, "output-s3-buffer-path", "/tmp", "The path prefix of the S3 log buffer files.: \n\tgor --input-raw :80 --output-s3 s3://mybucket/logs/%Y-%m-%d.gz --output-s3-buffer-path /mnt/logs")
+	flag.StringVar(&Settings.outputS3Config.region, "output-s3-region", "us-east-1", "Specify S3 region, default is 'us-east-1': \n\tgor --input-raw :80 --output-s3 s3://mybucket/logs/%Y-%m-%d.gz --output-s3-region us-west-2")
+	flag.StringVar(&Settings.outputS3Config.endpoint, "output-s3-endpoint", "", "You can specify custom endpoint if using alternative S3 compatitable storage.")
 
 	flag.Var(&Settings.inputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
 

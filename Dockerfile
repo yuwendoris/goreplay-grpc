@@ -14,6 +14,7 @@ RUN apt-get install flex bison -y
 RUN wget http://www.tcpdump.org/release/libpcap-1.7.4.tar.gz && tar xzf libpcap-1.7.4.tar.gz && cd libpcap-1.7.4 && ./configure && make install
 RUN go get github.com/google/gopacket
 RUN go get -u github.com/golang/lint/golint
+RUN go get -u github.com/aws/aws-sdk-go
 
 WORKDIR /go/src/github.com/buger/gor/
 ADD . /go/src/github.com/buger/gor/
