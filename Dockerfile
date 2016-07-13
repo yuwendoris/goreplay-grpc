@@ -15,8 +15,8 @@ RUN wget http://www.tcpdump.org/release/libpcap-1.7.4.tar.gz && tar xzf libpcap-
 RUN go get github.com/google/gopacket
 RUN go get -u github.com/golang/lint/golint
 
-WORKDIR /go/src/github.com/buger/gor/
-ADD . /go/src/github.com/buger/gor/
+WORKDIR /go/src/github.com/buger/gor-pro/
+ADD . /go/src/github.com/buger/gor-pro/
 
 RUN javac -cp /tmp/commons-io-2.4/commons-io-2.4.jar ./examples/middleware/echo.java
 RUN go get

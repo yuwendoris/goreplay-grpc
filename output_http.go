@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/buger/gor/proto"
+	"github.com/buger/gor-pro/proto"
 )
 
 const initialDynamicWorkers = 10
