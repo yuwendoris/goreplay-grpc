@@ -49,13 +49,18 @@ type AppSettings struct {
 	inputRAWEngine        string
 	inputRAWTrackResponse bool
 	inputRAWRealIPHeader  string
+	inputRAWProtocol      string
 
 	middleware string
 
 	inputHTTP  MultiOption
-	outputHTTP MultiOption
 
+	outputHTTP MultiOption
 	outputHTTPConfig HTTPOutputConfig
+
+	outputBinary MultiOption
+	outputBinaryConfig BinaryOutputConfig
+
 	modifierConfig   HTTPModifierConfig
 }
 
@@ -106,6 +111,8 @@ func init() {
 
 	flag.StringVar(&Settings.inputRAWEngine, "input-raw-engine", "libpcap", "Intercept traffic using `libpcap` (default), and `raw_socket`")
 
+	flag.StringVar(&Settings.inputRAWProtocol, "input-raw-protocol", "http", "Specify application protocol of intercepted traffic. Possible values: http, binary")
+
 	flag.StringVar(&Settings.inputRAWRealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
 
 	flag.StringVar(&Settings.middleware, "middleware", "", "Used for modifying traffic using external command")
@@ -113,16 +120,27 @@ func init() {
 	flag.Var(&Settings.inputHTTP, "input-http", "Read requests from HTTP, should be explicitly sent from your application:\n\t# Listen for http on 9000\n\tgor --input-http :9000 --output-http staging.com")
 
 	flag.Var(&Settings.outputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
+
+    /* outputHTTPConfig */
 	flag.IntVar(&Settings.outputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
 	flag.IntVar(&Settings.outputHTTPConfig.workers, "output-http-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
 	flag.IntVar(&Settings.outputHTTPConfig.redirectLimit, "output-http-redirects", 0, "Enable how often redirects should be followed.")
 	flag.DurationVar(&Settings.outputHTTPConfig.Timeout, "output-http-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-http-timeout 30s")
-
 	flag.BoolVar(&Settings.outputHTTPConfig.stats, "output-http-stats", false, "Report http output queue stats to console every 5 seconds.")
 	flag.BoolVar(&Settings.outputHTTPConfig.OriginalHost, "http-original-host", false, "Normally gor replaces the Host http header with the host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
 	flag.BoolVar(&Settings.outputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
-
 	flag.StringVar(&Settings.outputHTTPConfig.elasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
+	/* outputHTTPConfig */
+
+
+	flag.Var(&Settings.outputBinary, "output-binary", "Forwards incoming binary payloads to given address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --input-raw-protocol binary --output-binary staging.com:80")
+	/* outputBinaryConfig */
+	flag.IntVar(&Settings.outputBinaryConfig.BufferSize, "output-tcp-response-buffer", 0, "TCP response buffer size, all data after this size will be discarded.")
+	flag.IntVar(&Settings.outputBinaryConfig.workers, "output-binary-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
+	flag.DurationVar(&Settings.outputBinaryConfig.Timeout, "output-binary-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-binary-timeout 30s")
+
+	flag.BoolVar(&Settings.outputBinaryConfig.Debug, "output-binary-debug", false, "Enables binary debug output.")
+	/* outputBinaryConfig */
 
 	flag.Var(&Settings.modifierConfig.headers, "http-set-header", "Inject additional headers to http reqest:\n\tgor --input-raw :8080 --output-http staging.com --http-set-header 'User-Agent: Gor'")
 	flag.Var(&Settings.modifierConfig.headers, "output-http-header", "WARNING: `--output-http-header` DEPRECATED, use `--http-set-header` instead")

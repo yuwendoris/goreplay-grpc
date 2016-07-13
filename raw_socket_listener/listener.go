@@ -16,7 +16,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/buger/gor/proto"
+	"github.com/buger/gor-pro/proto"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -69,6 +69,8 @@ type Listener struct {
 
 	quit    chan bool
 	readyCh chan bool
+
+	protocol TCPProtocol
 }
 
 type request struct {
@@ -85,7 +87,7 @@ const (
 )
 
 // NewListener creates and initializes new Listener object
-func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration) (l *Listener) {
+func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol) (l *Listener) {
 	l = &Listener{}
 
 	l.packetsChan = make(chan []byte, 10000)
@@ -99,6 +101,7 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	l.respAliases = make(map[uint32]*TCPMessage)
 	l.respWithoutReq = make(map[uint32]tcpID)
 	l.trackResponse = trackResponse
+	l.protocol = protocol
 
 	l.addr = addr
 	_port, _ := strconv.Atoi(port)
@@ -176,7 +179,7 @@ func (t *Listener) dispatchMessage(message *TCPMessage) {
 
 	t.deleteMessage(message)
 
-	if !message.complete {
+	if t.protocol == ProtocolHTTP && !message.complete {
 		if !message.IsIncoming {
 			delete(t.respAliases, message.Ack)
 			delete(t.respWithoutReq, message.Ack)
@@ -667,28 +670,30 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 
 	isIncoming := packet.DestPort == t.port
 
-	// Seek for 100-expect chunks
-	if parentAck, ok := t.seqWithData[packet.Seq]; ok {
-		// In case if non-first data chunks comes first
-		for _, m := range t.messages {
-			if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
-				t.deleteMessage(m)
+	if t.protocol == ProtocolHTTP {
+		// Seek for 100-expect chunks
+		if parentAck, ok := t.seqWithData[packet.Seq]; ok {
+			// In case if non-first data chunks comes first
+			for _, m := range t.messages {
+				if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
+					t.deleteMessage(m)
 
-				if m.AssocMessage != nil {
-					m.setAssocMessage(nil)
-				}
+					if m.AssocMessage != nil {
+						m.setAssocMessage(nil)
+					}
 
-				for _, pkt := range m.packets {
-					// log.Println("Updating ack", parentAck, pkt.Ack)
-					pkt.UpdateAck(parentAck)
-					// Re-queue this packets
-					t.processTCPPacket(pkt)
+					for _, pkt := range m.packets {
+						// log.Println("Updating ack", parentAck, pkt.Ack)
+						pkt.UpdateAck(parentAck)
+						// Re-queue this packets
+						t.processTCPPacket(pkt)
+					}
 				}
 			}
-		}
 
-		t.ackAliases[packet.Ack] = parentAck
-		packet.UpdateAck(parentAck)
+			t.ackAliases[packet.Ack] = parentAck
+			packet.UpdateAck(parentAck)
+		}
 	}
 
 	if alias, ok := t.ackAliases[packet.Ack]; ok {
@@ -704,7 +709,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message, ok := t.messages[packet.ID]
 
 	if !ok {
-		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming)
+		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol)
 		t.messages[packet.ID] = message
 
 		if !isIncoming {
@@ -721,7 +726,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message.AddPacket(packet)
 
 	// Handling Expect: 100-continue requests
-	if message.expectType == httpExpect100Continue && len(message.packets) == message.headerPacket+1 {
+	if t.protocol == ProtocolHTTP && message.expectType == httpExpect100Continue && len(message.packets) == message.headerPacket+1 {
 		seq := packet.Seq + uint32(message.Size())
 		t.seqWithData[seq] = packet.Ack
 		message.DataSeq = seq
