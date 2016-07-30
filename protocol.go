@@ -13,14 +13,18 @@ const (
 	ReplayedResponsePayload = '3'
 )
 
-func uuid() []byte {
-	b := make([]byte, 20)
+func randByte(len int) []byte {
+	b := make([]byte, len / 2)
 	rand.Read(b)
 
-	uuid := make([]byte, 40)
-	hex.Encode(uuid, b)
+	h := make([]byte, len)
+	hex.Encode(h, b)
 
-	return uuid
+	return h
+}
+
+func uuid() []byte {
+	return randByte(24)
 }
 
 var payloadSeparator = "\n🐵🙈🙉\n"
@@ -86,6 +90,16 @@ func payloadMeta(payload []byte) [][]byte {
 		headerSize = 0
 	}
 	return bytes.Split(payload[:headerSize], []byte{' '})
+}
+
+func payloadID(payload []byte) []byte {
+	idx := bytes.IndexByte(payload[2:], ' ')
+
+	if idx == -1 {
+		return []byte{}
+	}
+
+	return payload[2: 2 + idx]
 }
 
 func isOriginPayload(payload []byte) bool {

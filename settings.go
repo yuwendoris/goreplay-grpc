@@ -30,6 +30,7 @@ type AppSettings struct {
 	stats   bool
 
 	splitOutput bool
+	recognizeTCPSessions bool
 
 	inputDummy   MultiOption
 	outputDummy  MultiOption
@@ -76,6 +77,8 @@ func init() {
 	flag.BoolVar(&Settings.stats, "stats", false, "Turn on queue stats output")
 
 	flag.BoolVar(&Settings.splitOutput, "split-output", false, "By default each output gets same traffic. If set to `true` it splits traffic equally among all outputs.")
+
+	flag.BoolVar(&Settings.recognizeTCPSessions, "recognize-tcp-sessions", false, "[PRO] If turned on http output will create separate worker for each TCP session. Splitting output will session based as well.")
 
 	flag.Var(&Settings.inputDummy, "input-dummy", "Used for testing outputs. Emits 'Get /' request every 1s")
 	flag.Var(&Settings.outputDummy, "output-dummy", "DEPRECATED: use --output-stdout instead")

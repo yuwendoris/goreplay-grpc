@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"time"
+	"hash/fnv"
 )
 
 // Start initialize loop for sending data from inputs to outputs
@@ -87,13 +88,23 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 			}
 
 			if Settings.splitOutput {
-				// Simple round robin
-				writers[wIndex].Write(payload)
+				if Settings.recognizeTCPSessions {
+					hasher := fnv.New32a()
+					// First 20 bytes contain tcp session
+					id := payloadID(payload)
+					hasher.Write(id[:20])
 
-				wIndex++
+					wIndex = int(hasher.Sum32()) % len(writers)
+					writers[wIndex].Write(payload)
+				} else {
+					// Simple round robin
+					writers[wIndex].Write(payload)
 
-				if wIndex >= len(writers) {
-					wIndex = 0
+					wIndex++
+
+					if wIndex >= len(writers) {
+						wIndex = 0
+					}
 				}
 			} else {
 				for _, dst := range writers {

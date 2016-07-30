@@ -9,6 +9,7 @@ import (
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
 	data chan []byte
+	disableHeaders bool
 }
 
 // NewTestInput constructor for TestInput
@@ -22,17 +23,28 @@ func NewTestInput() (i *TestInput) {
 func (i *TestInput) Read(data []byte) (int, error) {
 	buf := <-i.data
 
-	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
-	copy(data[0:len(header)], header)
-	copy(data[len(header):], buf)
+	if !i.disableHeaders {
+		header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
+		copy(data[0:len(header)], header)
+		copy(data[len(header):], buf)
 
-	return len(buf) + len(header), nil
+		return len(buf) + len(header), nil
+	} else {
+		copy(data, buf)
+		return len(buf), nil
+	}
+}
+
+// EmitGET emits GET request without headers
+func (i *TestInput) EmitBytes(b []byte) {
+	i.data <- b
 }
 
 // EmitGET emits GET request without headers
 func (i *TestInput) EmitGET() {
 	i.data <- []byte("GET / HTTP/1.1\r\n\r\n")
 }
+
 
 // EmitPOST emits POST request with Content-Length
 func (i *TestInput) EmitPOST() {
