@@ -13,10 +13,10 @@ FADDR = ":8000"
 release: release-x64 release-mac
 
 release-x64:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -o gor $(LDFLAGS) && tar -czf gor_$(VERSION)_PRO_x64.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x64.tar.gz gor && rm gor
 
 release-x86:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i gor go build -o gor $(LDFLAGS) && tar -czf gor_$(VERSION)_PRO_x86.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i gor go build -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x86.tar.gz gor && rm gor
 
 release-mac:
 	go build -o gor $(MAC_LDFLAGS) && tar -czf gor_$(VERSION)_PRO_mac.tar.gz gor && rm gor
@@ -62,7 +62,7 @@ profile_test:
 
 # Used mainly for debugging, because docker container do not have access to parent machine ports
 run:
-	$(RUN) go run $(LDFLAGS) $(SOURCE) --input-dummy=0 --output-http="http://localhost:9000" --input-raw-track-response --input-raw 127.0.0.1:9000 --input-http 127.0.0.1:9000 --verbose --debug --middleware "./examples/middleware/echo.sh" --output-file requests.gor
+	$(RUN) go run $(LDFLAGS) $(SOURCE) --input-dummy=0 --output-http="http://localhost:9000" --input-raw-track-response --input-raw 127.0.0.1:9000 --verbose --debug --middleware "./examples/middleware/echo.sh" --output-file requests.gor
 
 run-2:
 	sudo -E go run $(SOURCE) --input-dummy="" --output-tcp localhost:27001 --verbose --debug

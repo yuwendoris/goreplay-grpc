@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,14 +52,6 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 	o.pathTemplate = pathTemplate
 	o.config = config
 	o.updateName()
-
-	// Force flushing every minute
-	go func() {
-		for {
-			time.Sleep(o.config.flushInterval)
-			o.flush()
-		}
-	}()
 
 	go func() {
 		for {
@@ -208,6 +201,13 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 }
 
 func (o *FileOutput) flush() {
+	// Don't exit on panic
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("PANIC while file flush: ", r, o, string(debug.Stack()))
+		}
+	}()
+
 	defer o.mu.Unlock()
 	o.mu.Lock()
 
