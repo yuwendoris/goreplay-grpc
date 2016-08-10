@@ -2,7 +2,8 @@ SOURCE = emitter.go gor.go gor_stat.go input_dummy.go input_file.go input_raw.go
 SOURCE_PATH = /go/src/github.com/buger/gor-pro/
 PORT = 8000
 FADDR = :8000
-RUN = docker run -v `pwd`:$(SOURCE_PATH) -p 0.0.0.0:$(PORT):$(PORT) -t -i gor
+CONTAINER=gor-pro
+RUN = docker run -v `pwd`:$(SOURCE_PATH) -p 0.0.0.0:$(PORT):$(PORT) -t -i $(CONTAINER)
 BENCHMARK = BenchmarkRAWInput
 TEST = TestRawListenerBench
 VERSION = DEV-$(shell date +%s)
@@ -13,16 +14,16 @@ FADDR = ":8000"
 release: release-x64 release-mac
 
 release-x64:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x64.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x64.tar.gz gor && rm gor
 
 release-x86:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i gor go build -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x86.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i $(CONTAINER) go build -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x86.tar.gz gor && rm gor
 
 release-mac:
 	go build -o gor $(MAC_LDFLAGS) && tar -czf gor_$(VERSION)_PRO_mac.tar.gz gor && rm gor
 
 build:
-	docker build -t gor .
+	docker build -t $(CONTAINER) .
 
 
 profile:
