@@ -148,6 +148,7 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 func (o *HTTPOutput) workerMaster() {
 	for {
 		newWorkers := <-o.needWorker
+		atomic.AddInt64(&o.activeWorkers, int64(newWorkers))
 		for i := 0; i < newWorkers; i++ {
 			go o.startWorker()
 		}
@@ -171,7 +172,6 @@ func (o *HTTPOutput) sessionWorkerMaster() {
 
 			if !ok {
 				atomic.AddInt64(&o.activeWorkers, 1)
-
 				worker = newHTTPWorker(o, nil)
 				o.workerSessions[sessionID] = worker
 			}
@@ -200,8 +200,6 @@ func (o *HTTPOutput) startWorker() {
 		Timeout:            o.config.Timeout,
 		ResponseBufferSize: o.config.BufferSize,
 	})
-
-	atomic.AddInt64(&o.activeWorkers, 1)
 
 	for {
 		select {

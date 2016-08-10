@@ -57,12 +57,11 @@ func TestHTTPOutput(t *testing.T) {
 		input.EmitGET()
 	}
 
-	wg.Wait()
-
-	if output.(*HTTPOutput).activeWorkers != 200 {
+	if output.(*HTTPOutput).activeWorkers < 200 {
 		t.Error("Should create workers for each request", output.(*HTTPOutput).activeWorkers)
 	}
 
+	wg.Wait()
 	close(quit)
 
 	Settings.modifierConfig = HTTPModifierConfig{}
