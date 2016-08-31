@@ -359,6 +359,26 @@ func (t *TCPMessage) updateBodyType() {
 		return
 	}
 
+	var lengthB, encB, connB []byte
+
+	proto.ParseHeaders(t.packetsData(), func(header, value []byte)bool{
+		if proto.HeadersEqual(header, []byte("Content-Length")) {
+			lengthB = value
+			return false
+		}
+
+		if proto.HeadersEqual(header, []byte("Transfer-Encoding")) {
+			encB = value
+			return false
+		}
+
+		if proto.HeadersEqual(header, []byte("Connection")) {
+			connB = value
+		}
+
+		return true
+	})
+
 	switch t.methodType {
 	case httpMethodNotFound:
 		return
@@ -366,27 +386,6 @@ func (t *TCPMessage) updateBodyType() {
 		t.bodyType = httpBodyEmpty
 		return
 	case httpMethodWithBody:
-		var lengthB, encB, connB []byte
-
-		proto.ParseHeaders(t.packetsData(), func(header, value []byte)bool{
-			if proto.HeadersEqual(header, []byte("Content-Length")) {
-				lengthB = value
-				return false
-			}
-
-			if proto.HeadersEqual(header, []byte("Transfer-Encoding")) {
-				encB = value
-				return false
-			}
-
-			if proto.HeadersEqual(header, []byte("Connection")) {
-				connB = value
-				return false
-			}
-
-			return true
-		})
-
 		if len(lengthB) > 0 {
 			t.contentLength, _ = strconv.Atoi(string(lengthB))
 
@@ -468,6 +467,10 @@ func (t *TCPMessage) setAssocMessage(m *TCPMessage) {
 // UpdateResponseAck should be called after packet is added
 func (t *TCPMessage) UpdateResponseAck() uint32 {
 	lastPacket := t.packets[len(t.packets)-1]
+	if lastPacket.IsFIN && len(t.packets) > 1 {
+		lastPacket = t.packets[len(t.packets)-2]
+	}
+
 	respAck := lastPacket.Seq + uint32(len(lastPacket.Data))
 
 	if t.ResponseAck != respAck {
