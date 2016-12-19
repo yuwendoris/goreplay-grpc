@@ -4,16 +4,59 @@ import (
 	"io"
 	"sync/atomic"
 	"time"
+	"fmt"
 
-	"github.com/buger/gor/proto"
+	"github.com/buger/gor-pro/proto"
 )
 
+var _ = fmt.Println
+
 const initialDynamicWorkers = 10
+
+type httpWorker struct {
+	output *HTTPOutput
+	client *HTTPClient
+	lastActivity time.Time
+	queue chan []byte
+	stop chan bool
+}
+
+func newHTTPWorker(output *HTTPOutput, queue chan []byte) *httpWorker {
+	client := NewHTTPClient(output.address, &HTTPClientConfig{
+		FollowRedirects:    output.config.redirectLimit,
+		Debug:              output.config.Debug,
+		OriginalHost:       output.config.OriginalHost,
+		Timeout:            output.config.Timeout,
+		ResponseBufferSize: output.config.BufferSize,
+	})
+
+	w := &httpWorker{client: client}
+	if queue == nil {
+		w.queue = make(chan []byte, 100)
+	} else {
+		w.queue = queue
+	}
+	w.stop = make(chan bool)
+
+	go func(){
+		for {
+			select {
+			case payload := <-w.queue:
+				output.sendRequest(client, payload)
+			case <- w.stop:
+				return
+			}
+		}
+	}()
+
+	return w
+}
 
 type response struct {
 	payload       []byte
 	uuid          []byte
 	roundTripTime int64
+	startedAt     int64
 }
 
 // HTTPOutputConfig struct for holding http output configuration
@@ -42,6 +85,8 @@ type HTTPOutput struct {
 	// alignment. atomic.* functions crash on 32bit machines if operand is not
 	// aligned at 64bit. See https://github.com/golang/go/issues/599
 	activeWorkers int64
+
+	workerSessions map[string]*httpWorker
 
 	address string
 	limit   int
@@ -90,7 +135,12 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 		o.config.TrackResponses = true
 	}
 
-	go o.workerMaster()
+	if Settings.recognizeTCPSessions {
+		o.workerSessions = make(map[string]*httpWorker, 100)
+		go o.sessionWorkerMaster()
+	} else {
+		go o.workerMaster()
+	}
 
 	return o
 }
@@ -98,6 +148,7 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 func (o *HTTPOutput) workerMaster() {
 	for {
 		newWorkers := <-o.needWorker
+		atomic.AddInt64(&o.activeWorkers, int64(newWorkers))
 		for i := 0; i < newWorkers; i++ {
 			go o.startWorker()
 		}
@@ -105,6 +156,38 @@ func (o *HTTPOutput) workerMaster() {
 		// Disable dynamic scaling if workers poll fixed size
 		if o.config.workers != 0 {
 			return
+		}
+	}
+}
+
+func (o *HTTPOutput) sessionWorkerMaster() {
+	gc := time.Tick(time.Second)
+
+	for {
+		select {
+		case p := <-o.queue:
+			id := payloadID(p)
+			sessionID := string(id[0:20])
+			worker, ok := o.workerSessions[sessionID]
+
+			if !ok {
+				atomic.AddInt64(&o.activeWorkers, 1)
+				worker = newHTTPWorker(o, nil)
+				o.workerSessions[sessionID] = worker
+			}
+
+			worker.queue <- p
+			worker.lastActivity = time.Now()
+		case <-gc:
+			now := time.Now()
+
+			for id, w := range o.workerSessions {
+				if !w.lastActivity.IsZero() && now.Sub(w.lastActivity) >= 60 * time.Second {
+					w.stop <- true
+					delete(o.workerSessions, id)
+					atomic.AddInt64(&o.activeWorkers, -1)
+				}
+			}
 		}
 	}
 }
@@ -118,31 +201,22 @@ func (o *HTTPOutput) startWorker() {
 		ResponseBufferSize: o.config.BufferSize,
 	})
 
-	deathCount := 0
-
-	atomic.AddInt64(&o.activeWorkers, 1)
-
 	for {
 		select {
 		case data := <-o.queue:
 			o.sendRequest(client, data)
-			deathCount = 0
-		case <-time.After(time.Millisecond * 100):
+		case <-time.After(2 * time.Second):
 			// When dynamic scaling enabled workers die after 2s of inactivity
-			if o.config.workers == 0 {
-				deathCount++
-			} else {
+			if o.config.workers > 0 {
 				continue
 			}
 
-			if deathCount > 20 {
-				workersCount := atomic.LoadInt64(&o.activeWorkers)
+			workersCount := atomic.LoadInt64(&o.activeWorkers)
 
-				// At least 1 startWorker should be alive
-				if workersCount != 1 {
-					atomic.AddInt64(&o.activeWorkers, -1)
-					return
-				}
+			// At least 1 startWorker should be alive
+			if workersCount != 1 {
+				atomic.AddInt64(&o.activeWorkers, -1)
+				return
 			}
 		}
 	}
@@ -162,7 +236,7 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 		o.queueStats.Write(len(o.queue))
 	}
 
-	if o.config.workers == 0 {
+	if !Settings.recognizeTCPSessions && o.config.workers == 0 {
 		workersCount := atomic.LoadInt64(&o.activeWorkers)
 
 		if len(o.queue) > int(workersCount) {
@@ -178,7 +252,7 @@ func (o *HTTPOutput) Read(data []byte) (int, error) {
 
 	Debug("[OUTPUT-HTTP] Received response:", string(resp.payload))
 
-	header := payloadHeader(ReplayedResponsePayload, resp.uuid, resp.roundTripTime)
+	header := payloadHeader(ReplayedResponsePayload, resp.uuid, resp.roundTripTime, resp.startedAt)
 	copy(data[0:len(header)], header)
 	copy(data[len(header):], resp.payload)
 
@@ -206,7 +280,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	}
 
 	if o.config.TrackResponses {
-		o.responses <- response{resp, uuid, stop.UnixNano() - start.UnixNano()}
+		o.responses <- response{resp, uuid, start.UnixNano(), stop.UnixNano() - start.UnixNano()}
 	}
 
 	if o.elasticSearch != nil {

@@ -6,6 +6,7 @@
 *.bin
 
 *.gz
+*.zip
 
 *.class
 
@@ -15,3 +16,7 @@
 gor
 
 *.mprof
+
+*.pcap
+
+.DS_Store

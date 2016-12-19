@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var _ = log.Println
@@ -33,18 +34,21 @@ type TCPPacket struct {
 	Ack        uint32
 	OrigAck    uint32
 	DataOffset uint8
+	IsFIN      bool
 
 	Raw  []byte
 	Data []byte
 	Addr []byte
+	timestamp time.Time
 	ID   tcpID
 }
 
 // ParseTCPPacket takes address and tcp payload and returns parsed TCPPacket
-func ParseTCPPacket(addr []byte, data []byte) (p *TCPPacket) {
+func ParseTCPPacket(addr []byte, data []byte, timestamp time.Time) (p *TCPPacket) {
 	p = &TCPPacket{Raw: data}
 	p.ParseBasic()
 	p.Addr = addr
+	p.timestamp = timestamp
 	p.GenID()
 
 	return
@@ -71,28 +75,40 @@ func (t *TCPPacket) ParseBasic() {
 	t.Seq = binary.BigEndian.Uint32(t.Raw[4:8])
 	t.Ack = binary.BigEndian.Uint32(t.Raw[8:12])
 	t.DataOffset = (t.Raw[12] & 0xF0) >> 4
+	t.IsFIN = t.Raw[13]&0x01 != 0
 
 	// log.Println("DataOffset:", t.DataOffset, t.DestPort, t.SrcPort, t.Seq, t.Ack)
 
 	t.Data = t.Raw[t.DataOffset*4:]
 }
 
-func (t *TCPPacket) Dump() []byte {
-	buf := make([]byte, len(t.Data)+16+16)
-	copy(buf[:16], t.Addr)
+func (t *TCPPacket) dump() *packet {
 
-	tcpBuf := buf[16:]
+	packetSrcIP := make([]byte, 16)
+	packetData := make([]byte, len(t.Data) + 16)
 
-	binary.BigEndian.PutUint16(tcpBuf[2:4], t.DestPort)
-	binary.BigEndian.PutUint16(tcpBuf[0:2], t.SrcPort)
+	copy(packetSrcIP, t.Addr)
 
-	binary.BigEndian.PutUint32(tcpBuf[4:8], t.Seq)
-	binary.BigEndian.PutUint32(tcpBuf[8:12], t.Ack)
+	binary.BigEndian.PutUint16(packetData[0:2], t.SrcPort)
+	binary.BigEndian.PutUint16(packetData[2:4], t.DestPort)
 
-	tcpBuf[12] = 64
-	copy(tcpBuf[16:], t.Data)
+	binary.BigEndian.PutUint32(packetData[4:8], t.Seq)
+	binary.BigEndian.PutUint32(packetData[8:12], t.Ack)
 
-	return buf
+	packetData[12] = 64
+
+	if t.IsFIN {
+		packetData[13] = packetData[13] | 0x01
+	}
+
+	copy(packetData[16:], t.Data)
+
+	return &packet{
+		srcIP: packetSrcIP,
+		data:packetData,
+		timestamp:t.timestamp,
+	}
+
 }
 
 // String output for a TCP Packet
@@ -109,6 +125,7 @@ func (t *TCPPacket) String() string {
 		"Sequence:" + strconv.Itoa(int(t.Seq)),
 		"Acknowledgment:" + strconv.Itoa(int(t.Ack)),
 		"Header len:" + strconv.Itoa(int(t.DataOffset)),
+		"FIN:" + strconv.FormatBool(t.IsFIN),
 
 		"Data size:" + strconv.Itoa(len(t.Data)),
 		"Data:" + string(t.Data[:maxLen]),

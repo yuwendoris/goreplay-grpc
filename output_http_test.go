@@ -57,8 +57,11 @@ func TestHTTPOutput(t *testing.T) {
 		input.EmitGET()
 	}
 
-	wg.Wait()
+	if output.(*HTTPOutput).activeWorkers < 50 {
+		t.Error("Should create workers for each request", output.(*HTTPOutput).activeWorkers)
+	}
 
+	wg.Wait()
 	close(quit)
 
 	Settings.modifierConfig = HTTPModifierConfig{}
@@ -99,7 +102,7 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	Settings.modifierConfig = HTTPModifierConfig{}
 }
 
-func TestOutputHTTPSSL(t *testing.T) {
+func TestHTTPOutputSSL(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
@@ -123,6 +126,53 @@ func TestOutputHTTPSSL(t *testing.T) {
 
 	wg.Wait()
 	close(quit)
+}
+
+func TestHTTPOutputSessions(t *testing.T) {
+	wg := new(sync.WaitGroup)
+	quit := make(chan int)
+
+	input := NewTestInput()
+	input.disableHeaders = true
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		wg.Done()
+	}))
+	defer server.Close()
+
+	Settings.recognizeTCPSessions = true
+	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: true})
+
+	Plugins.Inputs = []io.Reader{input}
+	Plugins.Outputs = []io.Writer{output}
+
+	go Start(quit)
+
+	uuid1 := []byte("1234567890123456789a0000")
+	uuid2 := []byte("1234567890123456789d0000")
+
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1) // OPTIONS should be ignored
+		copy(uuid1[20:], randByte(4))
+		input.EmitBytes([]byte("1 " + string(uuid1) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
+	}
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1) // OPTIONS should be ignored
+		copy(uuid2[20:], randByte(4))
+		input.EmitBytes([]byte("1 " + string(uuid2) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
+	}
+
+	wg.Wait()
+
+	if output.(*HTTPOutput).activeWorkers != 2 {
+		t.Error("Should have only 2 workers", output.(*HTTPOutput).activeWorkers)
+	}
+
+	close(quit)
+
+	Settings.recognizeTCPSessions = false
 }
 
 func BenchmarkHTTPOutput(b *testing.B) {

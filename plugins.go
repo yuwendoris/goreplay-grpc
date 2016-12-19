@@ -95,13 +95,19 @@ func InitPlugins() {
 		registerPlugin(NewDummyOutput)
 	}
 
+	if Settings.outputNull {
+		registerPlugin(NewNullOutput)
+	}
+
 	engine := EnginePcap
 	if Settings.inputRAWEngine == "raw_socket" {
 		engine = EngineRawSocket
+	} else if Settings.inputRAWEngine == "pcap_file" {
+		engine = EnginePcapFile
 	}
 
 	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, time.Duration(0), Settings.inputRAWRealIPHeader)
+		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, time.Duration(0), Settings.inputRAWRealIPHeader, Settings.inputRAWProtocol)
 	}
 
 	for _, options := range Settings.inputTCP {
@@ -117,7 +123,7 @@ func InitPlugins() {
 	}
 
 	for _, options := range Settings.outputFile {
-		registerPlugin(NewFileOutput, options, Settings.outputFileConfig)
+		registerPlugin(NewFileOutput, options, &Settings.outputFileConfig)
 	}
 
 	for _, options := range Settings.outputS3 {
@@ -140,5 +146,13 @@ func InitPlugins() {
 
 	for _, options := range Settings.outputHTTP {
 		registerPlugin(NewHTTPOutput, options, &Settings.outputHTTPConfig)
+	}
+
+	for _, options := range Settings.outputBinary {
+		registerPlugin(NewBinaryOutput, options, &Settings.outputBinaryConfig)
+	}
+
+	if Settings.outputKafkaConfig.host != "" && Settings.outputKafkaConfig.topic != "" {
+		registerPlugin(NewKafkaOutput, "", &Settings.outputKafkaConfig)
 	}
 }

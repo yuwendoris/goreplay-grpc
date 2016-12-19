@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"time"
+	"hash/fnv"
 )
 
 // Start initialize loop for sending data from inputs to outputs
@@ -15,7 +16,7 @@ func Start(stop chan int) {
 			middleware.ReadFrom(in)
 		}
 
-		// We going only to read responses, so using same ReadFrom method
+		// We are going only to read responses, so using same ReadFrom method
 		for _, out := range Plugins.Outputs {
 			if r, ok := out.(io.Reader); ok {
 				middleware.ReadFrom(r)
@@ -32,13 +33,7 @@ func Start(stop chan int) {
 	for {
 		select {
 		case <-stop:
-			pluginMu.Lock()
-			for _, p := range Plugins.All {
-				if cp, ok := p.(io.Closer); ok {
-					cp.Close()
-				}
-			}
-			pluginMu.Unlock()
+			finalize()
 			return
 		case <-time.After(100 * time.Millisecond):
 		}
@@ -87,13 +82,23 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 			}
 
 			if Settings.splitOutput {
-				// Simple round robin
-				writers[wIndex].Write(payload)
+				if Settings.recognizeTCPSessions {
+					hasher := fnv.New32a()
+					// First 20 bytes contain tcp session
+					id := payloadID(payload)
+					hasher.Write(id[:20])
 
-				wIndex++
+					wIndex = int(hasher.Sum32()) % len(writers)
+					writers[wIndex].Write(payload)
+				} else {
+					// Simple round robin
+					writers[wIndex].Write(payload)
 
-				if wIndex >= len(writers) {
-					wIndex = 0
+					wIndex++
+
+					if wIndex >= len(writers) {
+						wIndex = 0
+					}
 				}
 			} else {
 				for _, dst := range writers {

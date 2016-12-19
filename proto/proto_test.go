@@ -2,6 +2,7 @@ package proto
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 )
 
@@ -14,6 +15,13 @@ func TestHeader(t *testing.T) {
 
 	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
 		t.Error("Should find header value")
+	}
+
+	// Value with space at end
+	payload = []byte("POST /post HTTP/1.1\r\nContent-Length: 7 \r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if val = Header(payload, []byte("Content-Length")); !bytes.Equal(val, []byte("7")) {
+		t.Error("Should find header value without space after 7")
 	}
 
 	// Value without space at start
@@ -38,7 +46,7 @@ func TestHeader(t *testing.T) {
 	}
 
 	// Header not found
-	if _, headerStart, _, _ = header(payload, []byte("Not-Found")); headerStart != -1 {
+	if _, headerStart, _, _, _ = header(payload, []byte("Not-Found")); headerStart != -1 {
 		t.Error("Should not found header")
 	}
 
@@ -94,6 +102,117 @@ func TestSetHeader(t *testing.T) {
 
 	if payload = SetHeader(payload, []byte("User-Agent"), []byte("Gor")); !bytes.Equal(payload, payloadAfter) {
 		t.Error("Should add header if not found", string(payload))
+	}
+}
+
+func TestDeleteHeader(t *testing.T) {
+	var payload, payloadAfter []byte
+
+	payload = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if payload = DeleteHeader(payload, []byte("User-Agent")); !bytes.Equal(payload, payloadAfter) {
+		t.Error("Should delete header if found", string(payload), string(payloadAfter))
+	}
+
+	//Whitespace at end of User-Agent
+	payload = []byte("POST /post HTTP/1.1\r\nUser-Agent: Gor \r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+	payloadAfter = []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+
+	if payload = DeleteHeader(payload, []byte("User-Agent")); !bytes.Equal(payload, payloadAfter) {
+		t.Error("Should delete header if found", string(payload), string(payloadAfter))
+	}
+}
+
+func TestParseHeaders(t *testing.T) {
+	payload := [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"), []byte("g\r\nUser-Ag"), []byte("ent:Chrome\r\n\r\n"), []byte("Fake-Header: asda")}
+
+	headers := make(map[string]string)
+
+	ParseHeaders(payload, func(header []byte, value []byte) bool {
+		headers[string(header)] = string(value)
+		return true
+	})
+
+	expected := map[string]string{
+		"Content-Length": "7",
+		"Host":           "www.w3.org",
+		"User-Agent":     "Chrome",
+	}
+
+	if !reflect.DeepEqual(headers, expected) {
+		t.Error("Headers do not properly parsed", headers)
+	}
+}
+
+func TestParseHeadersWithComplexUserAgent(t *testing.T) {
+	// User-Agent could contain inside ':'
+	// Parser should wait for \r\n
+	payload := [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"), []byte("g\r\nUser-Ag"), []byte("ent:Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\r\n\r\n"), []byte("Fake-Header: asda")}
+
+	headers := make(map[string]string)
+
+	ParseHeaders(payload, func(header []byte, value []byte) bool {
+		headers[string(header)] = string(value)
+		return true
+	})
+
+	expected := map[string]string{
+		"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko",
+	}
+
+	if expected["User-Agent"] != headers["User-Agent"] {
+		t.Errorf("Header 'User-Agent' expected '%s' and parsed: '%s'", expected["User-Agent"], headers["User-Agent"])
+	}
+}
+
+func TestParseHeadersWithOrigin(t *testing.T) {
+	// User-Agent could contain inside ':'
+	// Parser should wait for \r\n
+	payload := [][]byte{[]byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.or"), []byte("g\r\nReferrer: http://127.0.0.1:3000\r\nOrigi"), []byte("n: https://www.example.com\r\nUser-Ag"), []byte("ent:Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\r\n\r\n"), []byte("in:https://www.example.com\r\n\r\n"), []byte("Fake-Header: asda")}
+
+	headers := make(map[string]string)
+
+	ParseHeaders(payload, func(header []byte, value []byte) bool {
+		headers[string(header)] = string(value)
+		return true
+	})
+
+	expected := map[string]string{
+		"Origin":     "https://www.example.com",
+		"User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko",
+		"Referrer":   "http://127.0.0.1:3000",
+	}
+
+	if expected["Referrer"] != headers["Referrer"] {
+		t.Errorf("Header 'Referrer' expected '%s' and parsed: '%s'", expected["Referrer"], headers["Referrer"])
+	}
+
+	if expected["Origin"] != headers["Origin"] {
+		t.Errorf("Header 'Origin' expected '%s' and parsed: '%s'", expected["Origin"], headers["Origin"])
+	}
+
+	if expected["User-Agent"] != headers["User-Agent"] {
+		t.Errorf("Header 'User-Agent' expected '%s' and parsed: '%s'", expected["User-Agent"], headers["User-Agent"])
+	}
+}
+
+func TestHeaderEquals(t *testing.T) {
+	tests := []struct {
+		h1     string
+		h2     string
+		equals bool
+	}{
+		{"Content-Length", "content-length", true},
+		{"content-length", "Content-Length", true},
+		{"content-Pength", "Content-Length", false},
+		{"Host", "Content-Length", false},
+	}
+
+	for _, tc := range tests {
+		if HeadersEqual([]byte(tc.h1), []byte(tc.h2)) != tc.equals {
+			t.Error(tc)
+		}
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/buger/gor-pro/proto"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
@@ -31,6 +32,12 @@ import (
 )
 
 var _ = fmt.Println
+
+type packet struct {
+	srcIP		[]byte
+	data		[]byte
+	timestamp	time.Time
+}
 
 // Listener handle traffic capture
 type Listener struct {
@@ -52,7 +59,7 @@ type Listener struct {
 	respWithoutReq map[uint32]tcpID
 
 	// Messages ready to be send to client
-	packetsChan chan []byte
+	packetsChan chan *packet
 
 	// Messages ready to be send to client
 	messagesChan chan *TCPMessage
@@ -68,6 +75,8 @@ type Listener struct {
 
 	quit    chan bool
 	readyCh chan bool
+
+	protocol TCPProtocol
 }
 
 type request struct {
@@ -80,13 +89,14 @@ type request struct {
 const (
 	EngineRawSocket = 1 << iota
 	EnginePcap
+	EnginePcapFile
 )
 
 // NewListener creates and initializes new Listener object
-func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration) (l *Listener) {
+func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol) (l *Listener) {
 	l = &Listener{}
 
-	l.packetsChan = make(chan []byte, 10000)
+	l.packetsChan = make(chan *packet, 10000)
 	l.messagesChan = make(chan *TCPMessage, 10000)
 	l.quit = make(chan bool)
 	l.readyCh = make(chan bool, 1)
@@ -97,6 +107,7 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	l.respAliases = make(map[uint32]*TCPMessage)
 	l.respWithoutReq = make(map[uint32]tcpID)
 	l.trackResponse = trackResponse
+	l.protocol = protocol
 
 	l.addr = addr
 	_port, _ := strconv.Atoi(port)
@@ -113,10 +124,10 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	// Special case for testing
 	if l.port != 0 {
 		switch engine {
-		case EngineRawSocket:
-			go l.readRAWSocket()
 		case EnginePcap:
 			go l.readPcap()
+		case EnginePcapFile:
+			go l.readPcapFile()
 		default:
 			log.Fatal("Unknown traffic interception engine:", engine)
 		}
@@ -135,9 +146,9 @@ func (t *Listener) listen() {
 				t.conn.Close()
 			}
 			return
-		case data := <-t.packetsChan:
-			packet := ParseTCPPacket(data[:16], data[16:])
-			t.processTCPPacket(packet)
+		case packet := <-t.packetsChan:
+			tcpPacket := ParseTCPPacket(packet.srcIP, packet.data, packet.timestamp)
+			t.processTCPPacket(tcpPacket)
 		case <-gcTicker:
 			now := time.Now()
 
@@ -172,7 +183,14 @@ func (t *Listener) dispatchMessage(message *TCPMessage) {
 
 	t.deleteMessage(message)
 
-	// log.Println("Dispatching, message", message.Start.UnixNano(), message.Seq, message.Ack, string(message.Bytes()))
+	if t.protocol == ProtocolHTTP && !message.complete {
+		if !message.IsIncoming {
+			delete(t.respAliases, message.Ack)
+			delete(t.respWithoutReq, message.Ack)
+		}
+
+		return
+	}
 
 	if message.IsIncoming {
 		// If there were response before request
@@ -182,10 +200,10 @@ func (t *Listener) dispatchMessage(message *TCPMessage) {
 				if resp, rok := t.messages[respID]; rok {
 					// if resp.AssocMessage == nil {
 					// log.Println("FOUND RESPONSE")
-					resp.AssocMessage = message
-					message.AssocMessage = resp
+					resp.setAssocMessage(message)
+					message.setAssocMessage(resp)
 
-					if resp.IsFinished() {
+					if resp.complete {
 						defer t.dispatchMessage(resp)
 					}
 					// }
@@ -193,14 +211,14 @@ func (t *Listener) dispatchMessage(message *TCPMessage) {
 			}
 
 			if resp, ok := t.messages[message.ResponseID]; ok {
-				resp.AssocMessage = message
+				resp.setAssocMessage(message)
 			}
 		}
 	} else {
 		if message.AssocMessage == nil {
 			if responseRequest, ok := t.respAliases[message.Ack]; ok {
-				message.AssocMessage = responseRequest
-				responseRequest.AssocMessage = message
+				message.setAssocMessage(responseRequest)
+				responseRequest.setAssocMessage(message)
 			}
 		}
 
@@ -244,6 +262,28 @@ func (e *DeviceNotFoundError) Error() string {
 	return msg
 }
 
+func isLoopback(device pcap.Interface) bool {
+	if len(device.Addresses) == 0 {
+		return false
+	}
+
+	switch device.Addresses[0].IP.String() {
+	case "127.0.0.1", "::1":
+		return true
+	}
+
+	return false
+}
+
+func listenAllInterfaces(addr string) bool {
+	switch addr {
+	case "", "0.0.0.0", "[::]", "::":
+		return true
+	default:
+		return false
+	}
+}
+
 func findPcapDevices(addr string) (interfaces []pcap.Interface, err error) {
 	devices, err := pcap.FindAllDevs()
 	if err != nil {
@@ -251,7 +291,7 @@ func findPcapDevices(addr string) (interfaces []pcap.Interface, err error) {
 	}
 
 	for _, device := range devices {
-		if (addr == "" || addr == "0.0.0.0" || addr == "[::]" || addr == "::") && len(device.Addresses) > 0 {
+		if listenAllInterfaces(addr) && len(device.Addresses) > 0 || isLoopback(device) {
 			interfaces = append(interfaces, device)
 			continue
 		}
@@ -299,12 +339,26 @@ func (t *Listener) readPcap() {
 			t.pcapHandles = append(t.pcapHandles, handle)
 
 			var bpfDstHost, bpfSrcHost string
-			for i, addr := range device.Addresses {
-				bpfDstHost += "dst host " + addr.IP.String()
-				bpfSrcHost += "src host " + addr.IP.String()
-				if i != len(device.Addresses) - 1 {
-					bpfDstHost += " or "
-					bpfSrcHost += " or "
+			var loopback = isLoopback(device)
+
+			if loopback {
+				var allAddr []string
+				for _, dc := range devices {
+					for _, addr := range dc.Addresses {
+						allAddr = append(allAddr, "(dst host "+addr.IP.String()+" and src host "+addr.IP.String()+")")
+					}
+				}
+
+				bpfDstHost = strings.Join(allAddr, " or ")
+				bpfSrcHost = bpfDstHost
+			} else {
+				for i, addr := range device.Addresses {
+					bpfDstHost += "dst host " + addr.IP.String()
+					bpfSrcHost += "src host " + addr.IP.String()
+					if i != len(device.Addresses)-1 {
+						bpfDstHost += " or "
+						bpfSrcHost += " or "
+					}
 				}
 			}
 
@@ -325,8 +379,16 @@ func (t *Listener) readPcap() {
 			}
 			t.mu.Unlock()
 
-			linkType := handle.LinkType()
-			source := gopacket.NewPacketSource(handle, linkType)
+			var decoder gopacket.Decoder
+
+			// Special case for tunnel interface https://github.com/google/gopacket/issues/99
+			if handle.LinkType() == 12 {
+				decoder = layers.LayerTypeIPv4
+			} else {
+				decoder = handle.LinkType()
+			}
+
+			source := gopacket.NewPacketSource(handle, decoder)
 			source.Lazy = true
 			source.NoCopy = true
 
@@ -343,14 +405,32 @@ func (t *Listener) readPcap() {
 					continue
 				}
 
-				if linkType == layers.LinkTypeEthernet {
-					// Skip ethernet layer, 14 bytes
-					data = packet.Data()[14:]
-				} else if linkType == layers.LinkTypeNull || linkType == layers.LinkTypeLoop {
-					data = packet.Data()[4:]
+				// We should remove network layer before parsing TCP/IP data
+				var of int
+				switch decoder {
+				case layers.LinkTypeEthernet:
+					of = 14
+				case layers.LinkTypePPP:
+					of = 1
+				case layers.LinkTypeFDDI:
+					of = 13
+				case layers.LinkTypeNull:
+					of = 4
+				case layers.LinkTypeLoop:
+					of = 4
+				case layers.LinkTypeRaw:
+					of = 0
+				case layers.LinkTypeLinuxSLL:
+					of = 16
+				default:
+					log.Println("Unknown packet layer", packet)
+					break
 				}
 
+				data = packet.Data()[of:]
+
 				version := uint8(data[0]) >> 4
+				ipLength := int(binary.BigEndian.Uint16(data[2:4]))
 
 				if version == 4 {
 					ihl := uint8(data[0]) & 0x0F
@@ -362,6 +442,24 @@ func (t *Listener) readPcap() {
 
 					srcIP = data[12:16]
 					dstIP = data[16:20]
+
+					// Too small IP packet
+					if ipLength < 20 {
+						continue
+					}
+
+					// Invalid length
+					if int(ihl*4) > ipLength {
+						continue
+					}
+
+					if cmp := len(data) - ipLength; cmp > 0 {
+						data = data[:ipLength]
+					} else if cmp < 0 {
+						// Truncated packet
+						continue
+					}
+
 					data = data[ihl*4:]
 				} else {
 					// Truncated IP info
@@ -376,15 +474,16 @@ func (t *Listener) readPcap() {
 				}
 
 				// Truncated TCP info
-				if len(data) < 13 {
+				if len(data) <= 13 {
 					continue
 				}
 
 				dataOffset := (data[12] & 0xF0) >> 4
+				isFIN := data[13]&0x01 != 0
 
 				// We need only packets with data inside
 				// Check that the buffer is larger than the size of the TCP header
-				if len(data) > int(dataOffset*4) {
+				if len(data) > int(dataOffset*4) || isFIN {
 					if !bpfSupported {
 						destPort := binary.BigEndian.Uint16(data[2:4])
 						srcPort := binary.BigEndian.Uint16(data[0:2])
@@ -404,10 +503,26 @@ func (t *Listener) readPcap() {
 						}
 
 						addrMatched := false
-						for _, a := range device.Addresses {
-							if a.IP.Equal(net.IP(addrCheck)) {
-								addrMatched = true
-								break
+
+						if loopback {
+							for _, dc := range devices {
+								if addrMatched {
+									break
+								}
+								for _, a := range dc.Addresses {
+									if a.IP.Equal(net.IP(addrCheck)) {
+										addrMatched = true
+										break
+									}
+								}
+							}
+							addrMatched = true
+						} else {
+							for _, a := range device.Addresses {
+								if a.IP.Equal(net.IP(addrCheck)) {
+									addrMatched = true
+									break
+								}
 							}
 						}
 
@@ -416,11 +531,7 @@ func (t *Listener) readPcap() {
 						}
 					}
 
-					newBuf := make([]byte, len(data)+16)
-					copy(newBuf[:16], srcIP)
-					copy(newBuf[16:], data)
-
-					t.packetsChan <- newBuf
+					t.packetsChan <- t.buildPacket(srcIP, data, packet.Metadata().Timestamp)
 				}
 			}
 		}(d)
@@ -428,6 +539,64 @@ func (t *Listener) readPcap() {
 
 	wg.Wait()
 	t.readyCh <- true
+}
+
+func (t *Listener) readPcapFile() {
+	if handle, err := pcap.OpenOffline(t.addr); err != nil {
+		log.Fatal(err)
+	} else {
+		t.readyCh <- true
+		packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+
+		for {
+			packet, err := packetSource.NextPacket()
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				log.Println("Error:", err)
+				continue
+			}
+
+			var addr, data []byte
+
+			if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
+				tcp, _ := tcpLayer.(*layers.TCP)
+				data = append(tcp.LayerContents(), tcp.LayerPayload()...)
+
+				if tcp.SrcPort >= 32768 && tcp.SrcPort <= 61000 {
+					copy(data[0:2], []byte{0, 0})
+					copy(data[2:4], []byte{0, 1})
+				} else {
+					copy(data[0:2], []byte{0, 1})
+					copy(data[2:4], []byte{0, 0})
+				}
+			} else {
+				continue
+			}
+
+			if ipLayer := packet.Layer(layers.LayerTypeIPv4); ipLayer != nil {
+				ip, _ := ipLayer.(*layers.IPv4)
+				addr = ip.SrcIP
+			} else if ipLayer = packet.Layer(layers.LayerTypeIPv6); ipLayer != nil {
+				ip, _ := ipLayer.(*layers.IPv6)
+				addr = ip.SrcIP
+			} else {
+				// log.Println("Can't find IP layer", packet)
+				continue
+			}
+
+			dataOffset := (data[12] & 0xF0) >> 4
+			isFIN := data[13]&0x01 != 0
+
+			// We need only packets with data inside
+			// Check that the buffer is larger than the size of the TCP header
+			if len(data) <= int(dataOffset*4) && !isFIN {
+				continue
+			}
+
+			t.packetsChan <- t.buildPacket(addr, data, packet.Metadata().Timestamp)
+		}
+	}
 }
 
 func (t *Listener) readRAWSocket() {
@@ -458,13 +627,23 @@ func (t *Listener) readRAWSocket() {
 
 		if n > 0 {
 			if t.isValidPacket(buf[:n]) {
-				newBuf := make([]byte, n+16)
-				copy(newBuf[16:], buf[:n])
-				copy(newBuf[:16], []byte(addr.(*net.IPAddr).IP))
-
-				t.packetsChan <- newBuf
+				t.packetsChan <- t.buildPacket([]byte(addr.(*net.IPAddr).IP), buf[:n], time.Now())
 			}
 		}
+	}
+}
+
+func (t *Listener) buildPacket(packetSrcIP []byte, packetData []byte, timestamp time.Time) *packet {
+	copyPacketSrcIP := make([]byte, 16)
+	copyPacketData := make([]byte, len(packetData))
+
+	copy(copyPacketSrcIP, packetSrcIP)
+	copy(copyPacketData, packetSrcIP)
+
+	return &packet{
+		srcIP: packetSrcIP,
+		data: packetData,
+		timestamp:timestamp,
 	}
 }
 
@@ -490,9 +669,6 @@ func (t *Listener) isValidPacket(buf []byte) bool {
 	return false
 }
 
-var bExpect100ContinueCheck = []byte("Expect: 100-continue")
-var bPOST = []byte("POST")
-
 // Trying to add packet to existing message or creating new message
 //
 // For TCP message unique id is Acknowledgment number (see tcp_packet.go)
@@ -504,34 +680,42 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 		}
 	}()
 
-	// log.Println("Processing packet:", packet.Ack, packet.Seq, packet.ID)
-
 	var message *TCPMessage
 
 	isIncoming := packet.DestPort == t.port
 
-	// Seek for 100-expect chunks
-	if parentAck, ok := t.seqWithData[packet.Seq]; ok {
-		// In case if non-first data chunks comes first
-		for _, m := range t.messages {
-			if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
-				t.deleteMessage(m)
+	if t.protocol == ProtocolHTTP {
+		// Seek for 100-expect chunks
+		if parentAck, ok := t.seqWithData[packet.Seq]; ok {
+			// In case if non-first data chunks comes first
+			for _, m := range t.messages {
+				if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
+					t.deleteMessage(m)
 
-				if m.AssocMessage != nil {
-					m.AssocMessage.AssocMessage = nil
-				}
+					if m.AssocMessage != nil {
+						m.setAssocMessage(nil)
+					}
 
-				for _, pkt := range m.packets {
-					// log.Println("Updating ack", parentAck, pkt.Ack)
-					pkt.UpdateAck(parentAck)
-					// Re-queue this packets
-					t.processTCPPacket(pkt)
+					for _, pkt := range m.packets {
+						// log.Println("Updating ack", parentAck, pkt.Ack)
+						pkt.UpdateAck(parentAck)
+						// Re-queue this packets
+						t.processTCPPacket(pkt)
+					}
 				}
 			}
-		}
 
-		t.ackAliases[packet.Ack] = parentAck
-		packet.UpdateAck(parentAck)
+			t.ackAliases[packet.Ack] = parentAck
+			packet.UpdateAck(parentAck)
+		}
+	}
+
+	if isIncoming && packet.IsFIN {
+		if ma, ok := t.respAliases[packet.Seq]; ok {
+			if ma.packets[0].SrcPort == packet.SrcPort {
+				packet.UpdateAck(ma.Ack)
+			}
+		}
 	}
 
 	if alias, ok := t.ackAliases[packet.Ack]; ok {
@@ -547,13 +731,13 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message, ok := t.messages[packet.ID]
 
 	if !ok {
-		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming)
+		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol, packet.timestamp)
 		t.messages[packet.ID] = message
 
 		if !isIncoming {
 			if responseRequest != nil {
-				message.AssocMessage = responseRequest
-				responseRequest.AssocMessage = message
+				message.setAssocMessage(responseRequest)
+				responseRequest.setAssocMessage(message)
 			} else {
 				t.respWithoutReq[packet.Ack] = packet.ID
 			}
@@ -564,35 +748,31 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message.AddPacket(packet)
 
 	// Handling Expect: 100-continue requests
-	if len(packet.Data) > 4 && bytes.Equal(packet.Data[0:4], bPOST) {
-		// reading last 20 bytes (not counting CRLF): last header value (if no body presented)
-		if bytes.Equal(packet.Data[len(packet.Data)-24:len(packet.Data)-4], bExpect100ContinueCheck) {
-			seq := packet.Seq + uint32(len(packet.Data))
-			t.seqWithData[seq] = packet.Ack
-			message.DataSeq = seq
+	if t.protocol == ProtocolHTTP && message.expectType == httpExpect100Continue && len(message.packets) == message.headerPacket+1 {
+		seq := packet.Seq + uint32(message.Size())
+		t.seqWithData[seq] = packet.Ack
+		message.DataSeq = seq
+		message.complete = false
 
-			// In case if sequence packet came first
-			for _, m := range t.messages {
-				if m.Seq == seq {
-					t.deleteMessage(m)
-					if m.AssocMessage != nil {
-						message.AssocMessage = m.AssocMessage
-					}
-					// log.Println("2: Adding ack alias:", m.Ack, packet.Ack)
-					t.ackAliases[m.Ack] = packet.Ack
+		// In case if sequence packet came first
+		for _, m := range t.messages {
+			if m.Seq == seq {
+				t.deleteMessage(m)
+				if m.AssocMessage != nil {
+					message.setAssocMessage(m.AssocMessage)
+				}
+				// log.Println("2: Adding ack alias:", m.Ack, packet.Ack)
+				t.ackAliases[m.Ack] = packet.Ack
 
-					for _, pkt := range m.packets {
-						pkt.UpdateAck(packet.Ack)
-						message.AddPacket(pkt)
-					}
+				for _, pkt := range m.packets {
+					pkt.UpdateAck(packet.Ack)
+					message.AddPacket(pkt)
 				}
 			}
-
-			// Removing `Expect: 100-continue` header
-			packet.Data = append(packet.Data[:len(packet.Data)-24], packet.Data[len(packet.Data)-2:]...)
-
-			// log.Println(string(packet.Data))
 		}
+
+		// Removing `Expect: 100-continue` header
+		packet.Data = proto.DeleteHeader(packet.Data, bExpectHeader)
 	}
 
 	// log.Println("Received message:", string(message.Bytes()), message.ID(), t.messages)
@@ -608,15 +788,18 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	}
 
 	// If message contains only single packet immediately dispatch it
-	if message.IsFinished() {
+	if message.complete {
+		// log.Println("COMPLETE!", isIncoming, message)
 		if isIncoming {
-			// log.Println("I'm finished", string(message.Bytes()), message.ResponseID, t.messages)
 			if t.trackResponse {
+				// log.Println("Found response!", message.ResponseID, t.messages)
+
 				if resp, ok := t.messages[message.ResponseID]; ok {
-					t.dispatchMessage(message)
-					if resp.IsFinished() {
+					if resp.complete {
 						t.dispatchMessage(resp)
 					}
+
+					t.dispatchMessage(message)
 				}
 			} else {
 				t.dispatchMessage(message)
@@ -627,7 +810,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 			}
 
 			if req, ok := t.messages[message.AssocMessage.ID()]; ok {
-				if req.IsFinished() {
+				if req.complete {
 					t.dispatchMessage(req)
 					t.dispatchMessage(message)
 				}

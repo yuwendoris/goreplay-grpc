@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	_ "reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -23,8 +24,8 @@ func TestHTTPClientURLPort(t *testing.T) {
 	}
 
 	c2 := NewHTTPClient("https://example.com", &HTTPClientConfig{})
-	if c2.baseURL != "https://example.com:443" {
-		t.Error("Sould add 443 port for https:", c2.baseURL)
+	if c2.baseURL != "https://example.com" {
+		t.Error("Sould not add 443 port for https:", c2.baseURL)
 	}
 
 	c3 := NewHTTPClient("https://example.com:1", &HTTPClientConfig{})
@@ -83,6 +84,37 @@ func TestHTTPClientSend(t *testing.T) {
 	client.Send(payload("GET"))
 	client.Send(payload("POST_CHUNKED"))
 	client.Send(payload("POST"))
+
+	wg.Wait()
+}
+
+func TestHTTPClientResonseByClose(t *testing.T) {
+	wg := new(sync.WaitGroup)
+
+	payload := []byte("GET / HTTP/1.1\r\n\r\n")
+	ln, _ := net.Listen("tcp", ":0")
+	go func() {
+		for {
+			conn, _ := ln.Accept()
+			buf := make([]byte, 4096)
+			conn.Read(buf)
+
+			conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
+			conn.Write([]byte("ab"))
+			conn.Close()
+
+			wg.Done()
+		}
+	}()
+
+	client := NewHTTPClient(ln.Addr().String(), &HTTPClientConfig{Debug: true})
+
+	wg.Add(1)
+	resp, _ := client.Send(payload)
+
+	if !bytes.Equal(resp, []byte("HTTP/1.1 200 OK\r\n\r\nab")) {
+		t.Error("Should return valid response", string(resp))
+	}
 
 	wg.Wait()
 }
@@ -321,6 +353,45 @@ func TestHTTPClientRedirectLimit(t *testing.T) {
 	// Have 3 redirects + 1 GET, but should do only 2 redirects + GET
 	wg.Add(3)
 	client.Send(GETPayload)
+
+	wg.Wait()
+}
+
+func TestHTTPClientBasicAuth(t *testing.T) {
+	wg := new(sync.WaitGroup)
+	wg.Add(2)
+
+	GETPayload := []byte("GET / HTTP/1.1\r\n\r\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, _ := r.BasicAuth()
+
+		if user != "user" || pass != "pass" {
+			http.Error(w, "Unauthorized.", 401)
+			wg.Done()
+			return
+		}
+
+		wg.Done()
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, &HTTPClientConfig{Debug: false})
+	resp, _ := client.Send(GETPayload)
+	client.Disconnect()
+
+	if !bytes.Equal(proto.Status(resp), []byte("401")) {
+		t.Error("Should return unauthorized error", string(resp))
+	}
+
+	authUrl := strings.Replace(server.URL, "http://", "http://user:pass@", -1)
+	client = NewHTTPClient(authUrl, &HTTPClientConfig{Debug: false})
+	resp, _ = client.Send(GETPayload)
+	client.Disconnect()
+
+	if !bytes.Equal(proto.Status(resp), []byte("200")) {
+		t.Error("Should return proper response", string(resp))
+	}
 
 	wg.Wait()
 }

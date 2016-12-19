@@ -123,7 +123,7 @@ func headerIndex(payload []byte, name []byte) int {
 // header return value and positions of header/value start/end.
 // If not found, value will be blank, and headerStart will be -1
 // Do not support multi-line headers.
-func header(payload []byte, name []byte) (value []byte, headerStart, valueStart, headerEnd int) {
+func header(payload []byte, name []byte) (value []byte, headerStart, headerEnd, valueStart, valueEnd int) {
 	headerStart = headerIndex(payload, name)
 
 	if headerStart == -1 {
@@ -131,24 +131,164 @@ func header(payload []byte, name []byte) (value []byte, headerStart, valueStart,
 	}
 
 	valueStart = headerStart + len(name) + 1 // Skip ":" after header name
-	if payload[valueStart] == ' ' {          // Ignore empty space after ':'
-		valueStart++
-	}
-
 	headerEnd = valueStart + bytes.IndexByte(payload[valueStart:], '\n')
 
-	if payload[headerEnd-1] == '\r' {
-		headerEnd -= 1
+	for valueStart < headerEnd { // Ignore empty space after ':'
+		if payload[valueStart] == ' ' {
+			valueStart++
+		} else {
+			break
+		}
 	}
 
-	value = payload[valueStart:headerEnd]
+	valueEnd = valueStart + bytes.IndexByte(payload[valueStart:], '\n')
+
+	if payload[headerEnd-1] == '\r' {
+		valueEnd--
+	}
+
+	// ignore empty space at end of header value
+	for valueStart < valueEnd {
+		if payload[valueEnd-1] == ' ' {
+			valueEnd--
+		} else {
+			break
+		}
+	}
+	value = payload[valueStart:valueEnd]
+
+	return
+}
+
+// Works only with ASCII
+func HeadersEqual(h1 []byte, h2 []byte) bool {
+	if len(h1) != len(h2) {
+		return false
+	}
+
+	for i, c1 := range h1 {
+		c2 := h2[i]
+
+		switch int(c1) - int(c2) {
+		case 0, 32, -32:
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+// Parsing headers from multiple payloads
+func ParseHeaders(payloads [][]byte, cb func(header []byte, value []byte) bool) {
+
+	hS := [2]int{0, 0}
+	hE := [2]int{-1, -1}
+	vS := [2]int{-1, -1}
+	vE := [2]int{-1, -1}
+
+	i := 0
+	pIdx := 0
+	lineBreaks := 0
+	newLineBreak := true
+
+	for {
+		if len(payloads)-1 < pIdx {
+			break
+		}
+
+		p := payloads[pIdx]
+
+		if len(p)-1 < i {
+			pIdx++
+			i = 0
+			continue
+		}
+
+		switch p[i] {
+		case '\r', '\n':
+			newLineBreak = true
+			lineBreaks++
+
+			// End of headers
+			if lineBreaks == 4 {
+				return
+			}
+
+			if lineBreaks > 1 {
+				break
+			}
+
+			vE = [2]int{pIdx, i}
+
+			if vS[1] != -1 && vE[1] != -1 &&
+				hS[1] != -1 && hE[1] != -1 {
+
+				var header, value []byte
+
+				phS, phE, pvS, pvE := payloads[hS[0]], payloads[hE[0]], payloads[vS[0]], payloads[vE[0]]
+
+				// If in same payload
+				if hS[0] == hE[0] {
+					header = phS[hS[1]:hE[1]]
+				} else {
+					header = make([]byte, len(phS)-hS[1]+hE[1])
+					copy(header, phS[hS[1]:])
+					copy(header[len(phS)-hS[1]:], phE[:hE[1]])
+				}
+
+				if vS[0] == vE[0] {
+					value = pvS[vS[1]:vE[1]]
+				} else {
+					value = make([]byte, len(pvS)-vS[1]+vE[1])
+					copy(value, pvS[vS[1]:])
+					copy(value[len(pvS)-vS[1]:], pvE[:vE[1]])
+				}
+
+				if !cb(header, value) {
+					return
+				}
+			}
+
+			// Header found, reset values
+			vS = [2]int{-1, -1}
+			vE = [2]int{-1, -1}
+			hS = [2]int{-1, -1}
+			hE = [2]int{-1, -1}
+		case ':':
+			if newLineBreak {
+				hE = [2]int{pIdx, i}
+				newLineBreak = false
+			}
+		default:
+			lineBreaks = 0
+
+			if hS[1] == -1 {
+				hS = [2]int{pIdx, i}
+			} else {
+				if hE[1] == -1 {
+					break
+				}
+
+				if vS[1] == -1 {
+					if p[i] == ' ' {
+						break
+					}
+
+					vS = [2]int{pIdx, i}
+				}
+			}
+		}
+
+		i++
+	}
 
 	return
 }
 
 // Header returns header value, if header not found, value will be blank
 func Header(payload, name []byte) []byte {
-	val, _, _, _ := header(payload, name)
+	val, _, _, _, _ := header(payload, name)
 
 	return val
 }
@@ -156,11 +296,11 @@ func Header(payload, name []byte) []byte {
 // SetHeader sets header value. If header not found it creates new one.
 // Returns modified request payload
 func SetHeader(payload, name, value []byte) []byte {
-	_, hs, vs, he := header(payload, name)
+	_, hs, _, vs, ve := header(payload, name)
 
 	if hs != -1 {
-		// If header found we just repace its value
-		return byteutils.Replace(payload, vs, he, value)
+		// If header found we just replace its value
+		return byteutils.Replace(payload, vs, ve, value)
 	}
 
 	return AddHeader(payload, name, value)
@@ -178,6 +318,19 @@ func AddHeader(payload, name, value []byte) []byte {
 	mimeStart := MIMEHeadersStartPos(payload)
 
 	return byteutils.Insert(payload, mimeStart, header)
+}
+
+// DelHeader takes http payload and removes header name from headers section
+// Returns modified request payload
+func DeleteHeader(payload, name []byte) []byte {
+	_, hs, he, _, _ := header(payload, name)
+	if hs != -1 {
+		newHeader := make([]byte, len(payload)-(he-hs)-1)
+		copy(newHeader[:hs], payload[:hs])
+		copy(newHeader[hs:], payload[he+1:])
+		return newHeader
+	}
+	return payload
 }
 
 // Body returns request/response body
@@ -295,7 +448,7 @@ func Status(payload []byte) []byte {
 }
 
 var httpMethods []string = []string{
-	"GET ", "OPTI", "HEAD", "POST", "PUT ", "DELE", "TRAC", "CONN", /* custom methods */"BAN", "PURG",
+	"GET ", "OPTI", "HEAD", "POST", "PUT ", "DELE", "TRAC", "CONN", "PATC" /* custom methods */, "BAN", "PURG",
 }
 
 func IsHTTPPayload(payload []byte) bool {

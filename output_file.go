@@ -8,9 +8,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,6 +36,7 @@ type FileOutputConfig struct {
 
 // FileOutput output plugin
 type FileOutput struct {
+	mu           sync.Mutex
 	pathTemplate string
 	currentName  string
 	file         *os.File
@@ -92,7 +95,6 @@ func setFileIndex(name string, idx int) string {
 	withoutExt := strings.TrimSuffix(name, ext)
 
 	if i := strings.LastIndex(withoutExt, "_"); i != -1 {
-		// Only prefixes with numbers counts
 		if _, err := strconv.Atoi(withoutExt[i+1:]); err == nil {
 			withoutExt = withoutExt[:i]
 		}
@@ -128,6 +130,9 @@ func (s sortByFileIndex) Less(i, j int) bool {
 }
 
 func (o *FileOutput) filename() string {
+	defer o.mu.Unlock()
+	o.mu.Lock()
+
 	path := o.pathTemplate
 
 	for name, fn := range dateFileNameFuncs {
@@ -171,7 +176,7 @@ func (o *FileOutput) filename() string {
 }
 
 func (o *FileOutput) updateName() {
-	o.currentName = o.filename()
+	o.currentName = filepath.Clean(o.filename())
 }
 
 func (o *FileOutput) Write(data []byte) (n int, err error) {
@@ -180,6 +185,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 	}
 
 	if o.file == nil || o.currentName != o.file.Name() {
+		o.mu.Lock()
 		o.Close()
 
 		o.file, err = os.OpenFile(o.currentName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0660)
@@ -196,6 +202,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 		}
 
 		o.queueLength = 0
+		o.mu.Unlock()
 	}
 
 	o.writer.Write(data)
@@ -207,16 +214,26 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 }
 
 func (o *FileOutput) flush() {
+	// Don't exit on panic
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("PANIC while file flush: ", r, o, string(debug.Stack()))
+		}
+	}()
+
+	defer o.mu.Unlock()
+	o.mu.Lock()
+
 	if o.file != nil {
 		if strings.HasSuffix(o.currentName, ".gz") {
 			o.writer.(*gzip.Writer).Flush()
 		} else {
 			o.writer.(*bufio.Writer).Flush()
 		}
-	}
 
-	if stat, err := o.file.Stat(); err != nil {
-		o.chunkSize = int(stat.Size())
+		if stat, err := o.file.Stat(); err != nil {
+			o.chunkSize = int(stat.Size())
+		}
 	}
 }
 
@@ -224,7 +241,7 @@ func (o *FileOutput) String() string {
 	return "File output: " + o.file.Name()
 }
 
-func (o *FileOutput) Close() {
+func (o *FileOutput) Close() error {
 	if o.file != nil {
 		if strings.HasSuffix(o.currentName, ".gz") {
 			o.writer.(*gzip.Writer).Close()
@@ -237,4 +254,5 @@ func (o *FileOutput) Close() {
 			go o.config.onClose(o.file.Name())
 		}
 	}
+	return nil
 }
