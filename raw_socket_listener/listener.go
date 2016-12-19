@@ -731,7 +731,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message, ok := t.messages[packet.ID]
 
 	if !ok {
-		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol, packet.timestamp))
+		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol, packet.timestamp)
 		t.messages[packet.ID] = message
 
 		if !isIncoming {
