@@ -33,6 +33,12 @@ import (
 
 var _ = fmt.Println
 
+type packet struct {
+	srcIP		[]byte
+	data		[]byte
+	timestamp	time.Time
+}
+
 // Listener handle traffic capture
 type Listener struct {
 	mu sync.Mutex
@@ -53,7 +59,7 @@ type Listener struct {
 	respWithoutReq map[uint32]tcpID
 
 	// Messages ready to be send to client
-	packetsChan chan []byte
+	packetsChan chan *packet
 
 	// Messages ready to be send to client
 	messagesChan chan *TCPMessage
@@ -90,7 +96,7 @@ const (
 func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol) (l *Listener) {
 	l = &Listener{}
 
-	l.packetsChan = make(chan []byte, 10000)
+	l.packetsChan = make(chan *packet, 10000)
 	l.messagesChan = make(chan *TCPMessage, 10000)
 	l.quit = make(chan bool)
 	l.readyCh = make(chan bool, 1)
@@ -140,9 +146,9 @@ func (t *Listener) listen() {
 				t.conn.Close()
 			}
 			return
-		case data := <-t.packetsChan:
-			packet := ParseTCPPacket(data[:16], data[16:])
-			t.processTCPPacket(packet)
+		case packet := <-t.packetsChan:
+			tcpPacket := ParseTCPPacket(packet.srcIP, packet.data, packet.timestamp)
+			t.processTCPPacket(tcpPacket)
 		case <-gcTicker:
 			now := time.Now()
 
@@ -468,7 +474,7 @@ func (t *Listener) readPcap() {
 				}
 
 				// Truncated TCP info
-				if len(data) < 13 {
+				if len(data) <= 13 {
 					continue
 				}
 
@@ -525,11 +531,7 @@ func (t *Listener) readPcap() {
 						}
 					}
 
-					newBuf := make([]byte, len(data)+16)
-					copy(newBuf[:16], srcIP)
-					copy(newBuf[16:], data)
-
-					t.packetsChan <- newBuf
+					t.packetsChan <- t.buildPacket(srcIP, data, packet.Metadata().Timestamp)
 				}
 			}
 		}(d)
@@ -592,11 +594,7 @@ func (t *Listener) readPcapFile() {
 				continue
 			}
 
-			newBuf := make([]byte, len(data)+16)
-			copy(newBuf[:16], addr)
-			copy(newBuf[16:], data)
-
-			t.packetsChan <- newBuf
+			t.packetsChan <- t.buildPacket(addr, data, packet.Metadata().Timestamp)
 		}
 	}
 }
@@ -629,13 +627,23 @@ func (t *Listener) readRAWSocket() {
 
 		if n > 0 {
 			if t.isValidPacket(buf[:n]) {
-				newBuf := make([]byte, n+16)
-				copy(newBuf[16:], buf[:n])
-				copy(newBuf[:16], []byte(addr.(*net.IPAddr).IP))
-
-				t.packetsChan <- newBuf
+				t.packetsChan <- t.buildPacket([]byte(addr.(*net.IPAddr).IP), buf[:n], time.Now())
 			}
 		}
+	}
+}
+
+func (t *Listener) buildPacket(packetSrcIP []byte, packetData []byte, timestamp time.Time) *packet {
+	copyPacketSrcIP := make([]byte, 16)
+	copyPacketData := make([]byte, len(packetData))
+
+	copy(copyPacketSrcIP, packetSrcIP)
+	copy(copyPacketData, packetSrcIP)
+
+	return &packet{
+		srcIP: packetSrcIP,
+		data: packetData,
+		timestamp:timestamp,
 	}
 }
 
@@ -723,7 +731,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message, ok := t.messages[packet.ID]
 
 	if !ok {
-		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol)
+		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol, packet.timestamp))
 		t.messages[packet.ID] = message
 
 		if !isIncoming {

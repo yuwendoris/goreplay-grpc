@@ -58,15 +58,10 @@ func NewHTTPClient(baseURL string, config *HTTPClientConfig) *HTTPClient {
 	}
 
 	u, _ := url.Parse(baseURL)
-	if !strings.Contains(u.Host, ":") {
-		if u.Scheme != "http" {
-			u.Host += ":" + defaultPorts[u.Scheme]
-		}
-	}
 
-	if config.Timeout.Nanoseconds() == 0 {
-		config.Timeout = 5 * time.Second
-	}
+	if config.Timeout == 0 {
+		config.Timeout = time.Second
+    }
 
 	config.ConnectionTimeout = config.Timeout
 
@@ -92,13 +87,13 @@ func (c *HTTPClient) Connect() (err error) {
 	c.Disconnect()
 
 	if !strings.Contains(c.host, ":") {
-		c.conn, err = net.DialTimeout("tcp", c.host+":80", c.config.ConnectionTimeout)
+		c.conn, err = net.DialTimeout("tcp", c.host + ":" + defaultPorts[c.scheme], c.config.ConnectionTimeout)
 	} else {
 		c.conn, err = net.DialTimeout("tcp", c.host, c.config.ConnectionTimeout)
 	}
 
 	if c.scheme == "https" {
-		tlsConn := tls.Client(c.conn, &tls.Config{InsecureSkipVerify: true})
+		tlsConn := tls.Client(c.conn, &tls.Config{InsecureSkipVerify: true, ServerName: c.host})
 
 		if err = tlsConn.Handshake(); err != nil {
 			return
@@ -216,9 +211,14 @@ func (c *HTTPClient) Send(data []byte) (response []byte, err error) {
 					if bytes.Equal(proto.Header(c.respBuf, []byte("Transfer-Encoding")), []byte("chunked")) {
 						chunked = true
 					} else {
-						l := proto.Header(c.respBuf, []byte("Content-Length"))
-						if len(l) > 0 {
-							contentLength, _ = strconv.Atoi(string(l))
+						status, _ := strconv.Atoi(string(proto.Status(c.respBuf)))
+						if (status >= 100 && status < 200) || status == 204 || status == 304 {
+							contentLength = 0
+						} else {
+							l := proto.Header(c.respBuf, []byte("Content-Length"))
+							if len(l) > 0 {
+								contentLength, _ = strconv.Atoi(string(l))
+							}
 						}
 					}
 
@@ -320,6 +320,11 @@ func (c *HTTPClient) Send(data []byte) (response []byte, err error) {
 
 			return c.Send(redirectPayload)
 		}
+	}
+
+	if bytes.Equal(proto.Status(payload), []byte("400")) {
+		c.Disconnect()
+		Debug("[HTTPClient] Closed connection on 400 response")
 	}
 
 	c.redirectsCount = 0

@@ -146,4 +146,8 @@ func InitPlugins() {
 	for _, options := range Settings.outputBinary {
 		registerPlugin(NewBinaryOutput, options, &Settings.outputBinaryConfig)
 	}
+
+	if Settings.outputKafkaConfig.host != "" && Settings.outputKafkaConfig.topic != "" {
+		registerPlugin(NewKafkaOutput, "", &Settings.outputKafkaConfig)
+	}
 }

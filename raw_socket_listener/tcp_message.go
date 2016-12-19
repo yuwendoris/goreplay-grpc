@@ -57,8 +57,8 @@ type TCPMessage struct {
 }
 
 // NewTCPMessage pointer created from a Acknowledgment number and a channel of messages readuy to be deleted
-func NewTCPMessage(Seq, Ack uint32, IsIncoming bool, protocol TCPProtocol) (msg *TCPMessage) {
-	msg = &TCPMessage{Seq: Seq, Ack: Ack, IsIncoming: IsIncoming, protocol: protocol}
+func NewTCPMessage(Seq, Ack uint32, IsIncoming bool, protocol TCPProtocol, timestamp time.Time) (msg *TCPMessage) {
+	msg = &TCPMessage{Seq: Seq, Ack: Ack, IsIncoming: IsIncoming, protocol: protocol, Start: timestamp}
 	msg.Start = time.Now()
 
 	return
@@ -142,6 +142,10 @@ func (t *TCPMessage) AddPacket(packet *TCPPacket) {
 
 	if packet.OrigAck != 0 {
 		t.DataAck = packet.OrigAck
+	}
+
+	if packet.timestamp.Before(t.Start) {
+		t.Start = packet.timestamp
 	}
 
 	t.checkSeqIntegrity()
