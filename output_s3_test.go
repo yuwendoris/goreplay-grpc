@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestS3Output(t *testing.T) {
@@ -30,6 +31,8 @@ func TestS3Output(t *testing.T) {
 	output.Write([]byte("1 1 1\ntest"))
 	output.buffer.updateName()
 	output.Write([]byte("1 1 1\ntest"))
+
+	time.Sleep(time.Second)
 
 	params := &s3.ListObjectsInput{
 		Bucket: bucket,

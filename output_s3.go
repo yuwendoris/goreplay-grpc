@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	_ "github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"io"
+	_ "io"
 	"log"
 	"math/rand"
 	"os"
@@ -77,7 +77,7 @@ func (o *S3Output) Write(data []byte) (n int, err error) {
 }
 
 func (o *S3Output) String() string {
-	return "File output: " + o.file.Name()
+	return "S3 output: " + o.pathTemplate
 }
 
 func (o *S3Output) Close() {

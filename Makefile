@@ -2,7 +2,7 @@ SOURCE = emitter.go gor.go gor_stat.go input_dummy.go input_file.go input_raw.go
 SOURCE_PATH = /go/src/github.com/buger/gor/
 PORT = 8000
 FADDR = :8000
-RUN = docker run -v `pwd`:$(SOURCE_PATH) -p 0.0.0.0:$(PORT):$(PORT) -t -i gor
+RUN = docker run -v `pwd`:$(SOURCE_PATH) -e AWS_ACCESS_KEY_ID=AKIAIOJPOSYCQCWU4YHQ -e AWS_SECRET_ACCESS_KEY=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 -p 0.0.0.0:$(PORT):$(PORT) -t -i gor
 BENCHMARK = BenchmarkRAWInput
 TEST = TestRawListenerBench
 VERSION = DEV-$(shell date +%s)
