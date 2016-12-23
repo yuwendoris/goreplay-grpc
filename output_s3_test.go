@@ -58,3 +58,55 @@ func TestS3Output(t *testing.T) {
 		os.Remove(m)
 	}
 }
+
+func TestS3OutputQueueLimit(t *testing.T) {
+	bucket := aws.String("test-gor")
+	rnd := rand.Int63()
+	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
+
+	output := NewS3Output(path,
+		&S3OutputConfig{
+			bufferConfig: FileOutputConfig{queueLimit: 100},
+		},
+	)
+	output.closeC = make(chan struct{}, 3)
+
+	svc := s3.New(output.session)
+
+	for i := 0; i < 3; i++ {
+		for i := 0; i < 100; i++ {
+			output.Write([]byte("1 1 1\ntest"))
+		}
+		output.buffer.updateName()
+	}
+	output.buffer.updateName()
+	output.Write([]byte("1 1 1\ntest"))
+
+	for i := 0; i < 3; i++ {
+		<-output.closeC
+	}
+
+	params := &s3.ListObjectsInput{
+		Bucket: bucket,
+		Prefix: aws.String(fmt.Sprintf("%d", rnd)),
+	}
+
+	resp, _ := svc.ListObjects(params)
+	if len(resp.Contents) != 3 {
+		t.Error("Should create 3 object", len(resp.Contents))
+	} else {
+		if *resp.Contents[0].Key != fmt.Sprintf("%d/requests_0.gz", rnd) ||
+			*resp.Contents[1].Key != fmt.Sprintf("%d/requests_1.gz", rnd) {
+			t.Error("Should assign proper names", resp.Contents)
+		}
+	}
+
+	for _, c := range resp.Contents {
+		svc.DeleteObject(&s3.DeleteObjectInput{Bucket: bucket, Key: c.Key})
+	}
+
+	matches, _ := filepath.Glob(fmt.Sprintf("/tmp/gor_output_s3_*"))
+	for _, m := range matches {
+		os.Remove(m)
+	}
+}

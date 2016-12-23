@@ -8,7 +8,7 @@ import (
 
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
-	data chan []byte
+	data           chan []byte
 	disableHeaders bool
 }
 
@@ -44,7 +44,6 @@ func (i *TestInput) EmitBytes(b []byte) {
 func (i *TestInput) EmitGET() {
 	i.data <- []byte("GET / HTTP/1.1\r\n\r\n")
 }
-
 
 // EmitPOST emits POST request with Content-Length
 func (i *TestInput) EmitPOST() {

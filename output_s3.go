@@ -30,6 +30,7 @@ type S3Output struct {
 	buffer  *FileOutput
 	session *session.Session
 	config  *S3OutputConfig
+	closeC  chan struct{}
 }
 
 // NewFileOutput constructor for FileOutput, accepts path
@@ -84,12 +85,18 @@ func (o *S3Output) Close() {
 	o.buffer.Close()
 }
 
-func (o *S3Output) keyPath(idx int) (bucket, key string) {
-	path := o.pathTemplate[5:] // stripping `s3://`
+func parseS3Url(path string) (bucket, key string) {
+	path = path[5:] // stripping `s3://`
 	sep := strings.IndexByte(path, '/')
 
 	bucket = path[:sep]
 	key = path[sep+1:]
+
+	return bucket, key
+}
+
+func (o *S3Output) keyPath(idx int) (bucket, key string) {
+	bucket, key = parseS3Url(o.pathTemplate)
 
 	for name, fn := range dateFileNameFuncs {
 		key = strings.Replace(key, name, fn(), -1)
@@ -119,4 +126,8 @@ func (o *S3Output) onBufferUpdate(path string) {
 	}
 
 	os.Remove(path)
+
+	if o.closeC != nil {
+		o.closeC <- struct{}{}
+	}
 }

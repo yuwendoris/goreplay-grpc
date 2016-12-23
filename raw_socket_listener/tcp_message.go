@@ -17,8 +17,8 @@ var _ = log.Println
 type TCPProtocol uint8
 
 const (
-	ProtocolHTTP    TCPProtocol = 0
-	ProtocolBinary 	TCPProtocol = 1
+	ProtocolHTTP   TCPProtocol = 0
+	ProtocolBinary TCPProtocol = 1
 )
 
 // TCPMessage ensure that all TCP packets for given request is received, and processed in right sequence
@@ -365,7 +365,7 @@ func (t *TCPMessage) updateBodyType() {
 
 	var lengthB, encB, connB []byte
 
-	proto.ParseHeaders(t.packetsData(), func(header, value []byte)bool{
+	proto.ParseHeaders(t.packetsData(), func(header, value []byte) bool {
 		if proto.HeadersEqual(header, []byte("Content-Length")) {
 			lengthB = value
 			return false
@@ -446,7 +446,7 @@ func (t *TCPMessage) check100Continue() {
 	}
 
 	var expectB []byte
-	proto.ParseHeaders(t.packetsData(), func(header, value []byte)bool{
+	proto.ParseHeaders(t.packetsData(), func(header, value []byte) bool {
 		if proto.HeadersEqual(header, bExpectHeader) {
 			expectB = value
 			return false

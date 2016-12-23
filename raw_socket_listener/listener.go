@@ -34,9 +34,9 @@ import (
 var _ = fmt.Println
 
 type packet struct {
-	srcIP		[]byte
-	data		[]byte
-	timestamp	time.Time
+	srcIP     []byte
+	data      []byte
+	timestamp time.Time
 }
 
 // Listener handle traffic capture
@@ -641,9 +641,9 @@ func (t *Listener) buildPacket(packetSrcIP []byte, packetData []byte, timestamp 
 	copy(copyPacketData, packetSrcIP)
 
 	return &packet{
-		srcIP: packetSrcIP,
-		data: packetData,
-		timestamp:timestamp,
+		srcIP:     packetSrcIP,
+		data:      packetData,
+		timestamp: timestamp,
 	}
 }
 

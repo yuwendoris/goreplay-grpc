@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"io"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"bytes"
 )
 
 func TestEmitter(t *testing.T) {

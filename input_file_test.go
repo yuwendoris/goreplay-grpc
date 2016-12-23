@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"io"
 	"io/ioutil"
 	"log"
@@ -379,4 +381,50 @@ func Duplicate(data []byte) (duplicate []byte) {
 	copy(duplicate, data)
 
 	return
+}
+
+func TestInputFileFromS3(t *testing.T) {
+	rnd := rand.Int63()
+	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
+
+	output := NewS3Output(path,
+		&S3OutputConfig{
+			bufferConfig: FileOutputConfig{queueLimit: 5000},
+		},
+	)
+	output.closeC = make(chan struct{}, 2)
+
+	for i := 0; i <= 10000; i++ {
+		output.Write([]byte("1 1 1\ntest"))
+
+		if i%5000 == 0 {
+			output.buffer.updateName()
+		}
+	}
+	output.Write([]byte("1 1 1\ntest"))
+
+	for i := 0; i < 2; i++ {
+		<-output.closeC
+	}
+
+	input := NewFileInput(fmt.Sprintf("s3://test-gor/%d", rnd), false)
+
+	buf := make([]byte, 1000)
+	for i := 0; i <= 10000; i++ {
+		input.Read(buf)
+	}
+
+	// Cleanup artifacts
+	bucket := aws.String("test-gor")
+	svc := s3.New(output.session)
+	params := &s3.ListObjectsInput{
+		Bucket: bucket,
+		Prefix: aws.String(fmt.Sprintf("%d", rnd)),
+	}
+
+	resp, _ := svc.ListObjects(params)
+
+	for _, c := range resp.Contents {
+		svc.DeleteObject(&s3.DeleteObjectInput{Bucket: bucket, Key: c.Key})
+	}
 }

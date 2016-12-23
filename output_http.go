@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"sync/atomic"
 	"time"
-	"fmt"
 
 	"github.com/buger/gor-pro/proto"
 )
@@ -14,11 +14,11 @@ var _ = fmt.Println
 const initialDynamicWorkers = 10
 
 type httpWorker struct {
-	output *HTTPOutput
-	client *HTTPClient
+	output       *HTTPOutput
+	client       *HTTPClient
 	lastActivity time.Time
-	queue chan []byte
-	stop chan bool
+	queue        chan []byte
+	stop         chan bool
 }
 
 func newHTTPWorker(output *HTTPOutput, queue chan []byte) *httpWorker {
@@ -38,12 +38,12 @@ func newHTTPWorker(output *HTTPOutput, queue chan []byte) *httpWorker {
 	}
 	w.stop = make(chan bool)
 
-	go func(){
+	go func() {
 		for {
 			select {
 			case payload := <-w.queue:
 				output.sendRequest(client, payload)
-			case <- w.stop:
+			case <-w.stop:
 				return
 			}
 		}
@@ -182,7 +182,7 @@ func (o *HTTPOutput) sessionWorkerMaster() {
 			now := time.Now()
 
 			for id, w := range o.workerSessions {
-				if !w.lastActivity.IsZero() && now.Sub(w.lastActivity) >= 60 * time.Second {
+				if !w.lastActivity.IsZero() && now.Sub(w.lastActivity) >= 60*time.Second {
 					w.stop <- true
 					delete(o.workerSessions, id)
 					atomic.AddInt64(&o.activeWorkers, -1)

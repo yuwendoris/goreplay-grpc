@@ -151,7 +151,6 @@ func TestHTTPOutputSessions(t *testing.T) {
 	uuid1 := []byte("1234567890123456789a0000")
 	uuid2 := []byte("1234567890123456789d0000")
 
-
 	for i := 0; i < 100; i++ {
 		wg.Add(1) // OPTIONS should be ignored
 		copy(uuid1[20:], randByte(4))

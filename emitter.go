@@ -2,9 +2,9 @@ package main
 
 import (
 	"bytes"
+	"hash/fnv"
 	"io"
 	"time"
-	"hash/fnv"
 )
 
 // Start initialize loop for sending data from inputs to outputs

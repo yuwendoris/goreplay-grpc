@@ -30,7 +30,7 @@ type AppSettings struct {
 	stats     bool
 	exitAfter time.Duration
 
-	splitOutput bool
+	splitOutput          bool
 	recognizeTCPSessions bool
 
 	inputDummy   MultiOption
@@ -58,15 +58,15 @@ type AppSettings struct {
 
 	middleware string
 
-	inputHTTP  MultiOption
+	inputHTTP MultiOption
 
-	outputHTTP MultiOption
+	outputHTTP       MultiOption
 	outputHTTPConfig HTTPOutputConfig
 
-	outputBinary MultiOption
+	outputBinary       MultiOption
 	outputBinaryConfig BinaryOutputConfig
 
-	modifierConfig   HTTPModifierConfig
+	modifierConfig HTTPModifierConfig
 
 	outputKafkaConfig KafkaConfig
 }
@@ -136,7 +136,7 @@ func init() {
 
 	flag.Var(&Settings.outputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
 
-    /* outputHTTPConfig */
+	/* outputHTTPConfig */
 	flag.IntVar(&Settings.outputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
 	flag.IntVar(&Settings.outputHTTPConfig.workers, "output-http-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
 	flag.IntVar(&Settings.outputHTTPConfig.redirectLimit, "output-http-redirects", 0, "Enable how often redirects should be followed.")
@@ -147,7 +147,6 @@ func init() {
 	flag.BoolVar(&Settings.outputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
 	flag.StringVar(&Settings.outputHTTPConfig.elasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
 	/* outputHTTPConfig */
-
 
 	flag.Var(&Settings.outputBinary, "output-binary", "Forwards incoming binary payloads to given address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --input-raw-protocol binary --output-binary staging.com:80")
 	/* outputBinaryConfig */

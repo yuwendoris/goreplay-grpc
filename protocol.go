@@ -14,7 +14,7 @@ const (
 )
 
 func randByte(len int) []byte {
-	b := make([]byte, len / 2)
+	b := make([]byte, len/2)
 	rand.Read(b)
 
 	h := make([]byte, len)
@@ -100,7 +100,7 @@ func payloadID(payload []byte) []byte {
 		return []byte{}
 	}
 
-	return payload[2: 2 + idx]
+	return payload[2 : 2+idx]
 }
 
 func isOriginPayload(payload []byte) bool {
