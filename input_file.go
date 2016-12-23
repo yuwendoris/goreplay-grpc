@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"io"
 	"log"
 	"os"
@@ -15,11 +18,64 @@ import (
 	"time"
 )
 
+type S3ReadCloser struct {
+	bucket string
+	key    string
+	offset int
+	sess   *session.Session
+}
+
+func NewS3ReadCloser(path string) *S3ReadCloser {
+	bucket, key := parseS3Url(path)
+
+	return &S3ReadCloser{
+		bucket: bucket,
+		key:    key,
+		sess:   session.New(&aws.Config{Region: aws.String("us-east-1")}),
+	}
+}
+
+func (s *S3ReadCloser) Read(b []byte) (n int, e error) {
+	svc := s3.New(s.sess)
+
+	objectRange := "bytes=" + strconv.Itoa(s.offset)
+	s.offset += 1000000 // Reading in chunks of 1 mb
+	objectRange += "-" + strconv.Itoa(s.offset-1)
+
+	params := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key),
+		Range:  aws.String(objectRange),
+	}
+	resp, err := svc.GetObject(params)
+
+	if err != nil {
+		return 0, err
+	}
+
+	totalSize, _ := strconv.Atoi(strings.Split(*resp.ContentRange, "/")[1])
+
+	n, e = resp.Body.Read(b)
+
+	// S3 always return EOF when reading byte range
+	// It is not actually error, until we reached end of file
+	if n > 0 && e != nil && s.offset < totalSize {
+		e = nil
+	}
+
+	return n, e
+}
+
+func (s *S3ReadCloser) Close() error {
+	return nil
+}
+
 type fileInputReader struct {
 	reader    *bufio.Reader
 	data      []byte
-	file      *os.File
+	file      io.ReadCloser
 	timestamp int64
+	s3        bool
 }
 
 func (f *fileInputReader) parseNext() error {
@@ -72,7 +128,14 @@ func (f *fileInputReader) Close() error {
 }
 
 func NewFileInputReader(path string) *fileInputReader {
-	file, err := os.Open(path)
+	var file io.ReadCloser
+	var err error
+
+	if strings.HasPrefix(path, "s3://") {
+		file = NewS3ReadCloser(path)
+	} else {
+		file, err = os.Open(path)
+	}
 
 	if err != nil {
 		log.Println(err)
@@ -137,9 +200,31 @@ func (i *FileInput) init() (err error) {
 
 	var matches []string
 
-	if matches, err = filepath.Glob(i.path); err != nil {
-		log.Println("Wrong file pattern", i.path, err)
-		return
+	if strings.HasPrefix(i.path, "s3://") {
+		sess := session.New(&aws.Config{Region: aws.String("us-east-1")})
+		svc := s3.New(sess)
+
+		bucket, key := parseS3Url(i.path)
+
+		params := &s3.ListObjectsV2Input{
+			Bucket: aws.String(bucket),
+			Prefix: aws.String(key),
+		}
+
+		resp, err := svc.ListObjectsV2(params)
+		if err != nil {
+			log.Println("Error while retreiving list of lies from S3", i.path, err)
+			return err
+		}
+
+		for _, c := range resp.Contents {
+			matches = append(matches, "s3://"+bucket+"/"+(*c.Key))
+		}
+	} else {
+		if matches, err = filepath.Glob(i.path); err != nil {
+			log.Println("Wrong file pattern", i.path, err)
+			return
+		}
 	}
 
 	if len(matches) == 0 {
