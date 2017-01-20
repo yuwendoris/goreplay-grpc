@@ -133,7 +133,7 @@ func TestHTTPOutputSessions(t *testing.T) {
 	quit := make(chan int)
 
 	input := NewTestInput()
-	input.disableHeaders = true
+	input.skipHeader = true
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		wg.Done()

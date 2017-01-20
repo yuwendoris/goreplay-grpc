@@ -13,6 +13,9 @@ FADDR = ":8000"
 
 release: release-x64 release-mac
 
+release-bin:
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -tags netgo $(LDFLAGS)
+
 release-x64:
 	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_PRO_x64.tar.gz gor && rm gor
 

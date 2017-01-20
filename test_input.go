@@ -9,7 +9,7 @@ import (
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
 	data chan []byte
-	disableHeaders bool
+	skipHeader bool
 }
 
 // NewTestInput constructor for TestInput
@@ -23,21 +23,21 @@ func NewTestInput() (i *TestInput) {
 func (i *TestInput) Read(data []byte) (int, error) {
 	buf := <-i.data
 
-	if !i.disableHeaders {
-		header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
+	var header []byte
+
+	if !i.skipHeader {
+		header = payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
 		copy(data[0:len(header)], header)
 		copy(data[len(header):], buf)
-
-		return len(buf) + len(header), nil
 	} else {
 		copy(data, buf)
-		return len(buf), nil
 	}
+
+	return len(buf) + len(header), nil
 }
 
-// EmitGET emits GET request without headers
-func (i *TestInput) EmitBytes(b []byte) {
-	i.data <- b
+func (i *TestInput) EmitBytes(data []byte) {
+	i.data <- data
 }
 
 // EmitGET emits GET request without headers
