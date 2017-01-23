@@ -59,8 +59,9 @@ type AppSettings struct {
 	middleware string
 
 	inputHTTP MultiOption
-
 	outputHTTP       MultiOption
+	prettifyHTTP bool
+
 	outputHTTPConfig HTTPOutputConfig
 
 	outputBinary       MultiOption
@@ -116,10 +117,14 @@ func init() {
 	flag.Var(&Settings.outputFileConfig.sizeLimit, "output-file-size-limit", "Size of each chunk. Default: 32mb")
 	flag.IntVar(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
 
+<<<<<<< HEAD
 	flag.Var(&Settings.outputS3, "output-s3", "Write incoming requests to S3 path: \n\tgor --input-raw :80 --output-s3 s3://mybucket/logs/%Y-%m-%d.gz")
 	flag.StringVar(&Settings.outputS3Config.bufferPath, "output-s3-buffer-path", "/tmp", "The path prefix of the S3 log buffer files.: \n\tgor --input-raw :80 --output-s3 s3://mybucket/logs/%Y-%m-%d.gz --output-s3-buffer-path /mnt/logs")
 	flag.StringVar(&Settings.outputS3Config.region, "output-s3-region", "us-east-1", "Specify S3 region, default is 'us-east-1': \n\tgor --input-raw :80 --output-s3 s3://mybucket/logs/%Y-%m-%d.gz --output-s3-region us-west-2")
 	flag.StringVar(&Settings.outputS3Config.endpoint, "output-s3-endpoint", "", "You can specify custom endpoint if using alternative S3 compatitable storage.")
+=======
+	flag.BoolVar(&Settings.prettifyHTTP, "prettify-http", false, "If enabled, will automatically decode requests and responses with: Content-Encodning: gzip and Transfer-Encoding: chunked. Useful for debugging, in conjuction with --output-stdout")
+>>>>>>> d66ba0353a9995e2d3be3bca00285b6cb8c859c4
 
 	flag.Var(&Settings.inputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
 
@@ -142,6 +147,7 @@ func init() {
 	flag.IntVar(&Settings.outputHTTPConfig.workers, "output-http-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
 	flag.IntVar(&Settings.outputHTTPConfig.redirectLimit, "output-http-redirects", 0, "Enable how often redirects should be followed.")
 	flag.DurationVar(&Settings.outputHTTPConfig.Timeout, "output-http-timeout", 5*time.Second, "Specify HTTP request/response timeout. By default 5s. Example: --output-http-timeout 30s")
+	flag.BoolVar(&Settings.outputHTTPConfig.TrackResponses, "output-http-track-response", false, "If turned on, HTTP output responses will be set to all outputs like stdout, file and etc.")
 
 	flag.BoolVar(&Settings.outputHTTPConfig.stats, "output-http-stats", false, "Report http output queue stats to console every 5 seconds.")
 	flag.BoolVar(&Settings.outputHTTPConfig.OriginalHost, "http-original-host", false, "Normally gor replaces the Host http header with the host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")

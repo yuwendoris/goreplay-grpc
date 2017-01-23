@@ -131,10 +131,6 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 		o.elasticSearch.Init(o.config.elasticSearch)
 	}
 
-	if len(Settings.middleware) > 0 {
-		o.config.TrackResponses = true
-	}
-
 	if Settings.recognizeTCPSessions {
 		o.workerSessions = make(map[string]*httpWorker, 100)
 		go o.sessionWorkerMaster()
