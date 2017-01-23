@@ -61,8 +61,8 @@ func TestHTTPOutput(t *testing.T) {
 		input.EmitGET()
 	}
 
-	if output.(*HTTPOutput).activeWorkers < 50 {
-		t.Error("Should create workers for each request", output.(*HTTPOutput).activeWorkers)
+	if http_output.(*HTTPOutput).activeWorkers < 50 {
+		t.Error("Should create workers for each request", http_output.(*HTTPOutput).activeWorkers)
 	}
 
 	wg.Wait()
