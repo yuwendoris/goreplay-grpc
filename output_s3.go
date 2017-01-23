@@ -99,7 +99,7 @@ func (o *S3Output) keyPath(idx int) (bucket, key string) {
 	bucket, key = parseS3Url(o.pathTemplate)
 
 	for name, fn := range dateFileNameFuncs {
-		key = strings.Replace(key, name, fn(), -1)
+		key = strings.Replace(key, name, fn(o.buffer), -1)
 	}
 
 	key = setFileIndex(key, idx)

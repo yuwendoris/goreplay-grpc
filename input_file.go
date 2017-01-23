@@ -206,12 +206,12 @@ func (i *FileInput) init() (err error) {
 
 		bucket, key := parseS3Url(i.path)
 
-		params := &s3.ListObjectsV2Input{
+		params := &s3.ListObjectsInput{
 			Bucket: aws.String(bucket),
 			Prefix: aws.String(key),
 		}
 
-		resp, err := svc.ListObjectsV2(params)
+		resp, err := svc.ListObjects(params)
 		if err != nil {
 			log.Println("Error while retreiving list of lies from S3", i.path, err)
 			return err

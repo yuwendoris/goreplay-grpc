@@ -16,14 +16,15 @@ import (
 	"time"
 )
 
-var dateFileNameFuncs = map[string]func() string{
-	"%Y":  func() string { return time.Now().Format("2006") },
-	"%m":  func() string { return time.Now().Format("01") },
-	"%d":  func() string { return time.Now().Format("02") },
-	"%H":  func() string { return time.Now().Format("15") },
-	"%M":  func() string { return time.Now().Format("04") },
-	"%S":  func() string { return time.Now().Format("05") },
-	"%NS": func() string { return fmt.Sprint(time.Now().Nanosecond()) },
+var dateFileNameFuncs = map[string]func(*FileOutput) string{
+	"%Y":  func(o *FileOutput) string { return time.Now().Format("2006") },
+	"%m":  func(o *FileOutput) string { return time.Now().Format("01") },
+	"%d":  func(o *FileOutput) string { return time.Now().Format("02") },
+	"%H":  func(o *FileOutput) string { return time.Now().Format("15") },
+	"%M":  func(o *FileOutput) string { return time.Now().Format("04") },
+	"%S":  func(o *FileOutput) string { return time.Now().Format("05") },
+	"%NS": func(o *FileOutput) string { return fmt.Sprint(time.Now().Nanosecond()) },
+	"%r":  func(o *FileOutput) string { return o.currentID },
 }
 
 type FileOutputConfig struct {
@@ -36,13 +37,15 @@ type FileOutputConfig struct {
 
 // FileOutput output plugin
 type FileOutput struct {
-	mu           sync.Mutex
-	pathTemplate string
-	currentName  string
-	file         *os.File
-	queueLength  int
-	chunkSize    int
-	writer       io.Writer
+	mu             sync.Mutex
+	pathTemplate   string
+	currentName    string
+	file           *os.File
+	queueLength    int
+	chunkSize      int
+	writer         io.Writer
+	requestPerFile bool
+	currentID      string
 
 	config *FileOutputConfig
 }
@@ -54,22 +57,19 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 	o.config = config
 	o.updateName()
 
-	if o.config.flushInterval == 0 {
-		o.config.flushInterval = time.Minute
+	if strings.Contains(pathTemplate, "%r") {
+		o.requestPerFile = true
 	}
 
-	// Force flushing every minute
-	go func() {
-		for {
-			time.Sleep(o.config.flushInterval)
-			o.flush()
-		}
-	}()
+	if config.flushInterval == 0 {
+		config.flushInterval = 100 * time.Millisecond
+	}
 
 	go func() {
 		for {
-			time.Sleep(time.Second)
+			time.Sleep(config.flushInterval)
 			o.updateName()
+			o.flush()
 		}
 	}()
 
@@ -136,7 +136,7 @@ func (o *FileOutput) filename() string {
 	path := o.pathTemplate
 
 	for name, fn := range dateFileNameFuncs {
-		path = strings.Replace(path, name, fn(), -1)
+		path = strings.Replace(path, name, fn(o), -1)
 	}
 
 	if !o.config.append {
@@ -180,6 +180,11 @@ func (o *FileOutput) updateName() {
 }
 
 func (o *FileOutput) Write(data []byte) (n int, err error) {
+	if o.requestPerFile {
+		o.currentID = string(payloadMeta(data)[1])
+		o.updateName()
+	}
+
 	if !isOriginPayload(data) {
 		return len(data), nil
 	}
