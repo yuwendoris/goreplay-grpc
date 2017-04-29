@@ -15,34 +15,22 @@ import (
 	"strings"
 )
 
-type S3OutputConfig struct {
-	bufferConfig FileOutputConfig
-
-	bufferPath string
-	region     string
-	endpoint   string
-}
-
 // FileOutput output plugin
 type S3Output struct {
 	pathTemplate string
 
 	buffer  *FileOutput
 	session *session.Session
-	config  *S3OutputConfig
+	config  *FileOutputConfig
 	closeC  chan struct{}
 }
 
 // NewFileOutput constructor for FileOutput, accepts path
-func NewS3Output(pathTemplate string, config *S3OutputConfig) *S3Output {
+func NewS3Output(pathTemplate string, config *FileOutputConfig) *S3Output {
 	o := new(S3Output)
 	o.pathTemplate = pathTemplate
 	o.config = config
-	o.config.bufferConfig.onClose = o.onBufferUpdate
-
-	if config.region == "" {
-		config.region = "us-east-1"
-	}
+	o.config.onClose = o.onBufferUpdate
 
 	if config.bufferPath == "" {
 		config.bufferPath = "/tmp"
@@ -57,19 +45,26 @@ func NewS3Output(pathTemplate string, config *S3OutputConfig) *S3Output {
 
 	buffer_path := filepath.Join(config.bufferPath, buffer_name)
 
-	o.buffer = NewFileOutput(buffer_path, &config.bufferConfig)
+	o.buffer = NewFileOutput(buffer_path, config)
 	o.connect()
-
-	if !strings.HasPrefix(pathTemplate, "s3://") {
-		log.Fatal("S3 path format should be: s3://<bucket>/<path_format>")
-	}
 
 	return o
 }
 
 func (o *S3Output) connect() {
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	config := &aws.Config{Region: aws.String(region)}
+
+	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
+		config.Endpoint = aws.String(endpoint)
+	}
+
 	if o.session == nil {
-		o.session = session.New(&aws.Config{Region: aws.String(o.config.region)})
+		o.session = session.New(config)
 	}
 }
 

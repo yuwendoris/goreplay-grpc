@@ -33,6 +33,7 @@ type FileOutputConfig struct {
 	sizeLimit     unitSizeVar
 	queueLimit    int
 	append        bool
+	bufferPath    string
 	onClose       func(string)
 }
 

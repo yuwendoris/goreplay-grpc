@@ -387,11 +387,7 @@ func TestInputFileFromS3(t *testing.T) {
 	rnd := rand.Int63()
 	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
 
-	output := NewS3Output(path,
-		&S3OutputConfig{
-			bufferConfig: FileOutputConfig{queueLimit: 5000},
-		},
-	)
+	output := NewS3Output(path, &FileOutputConfig{queueLimit: 5000})
 	output.closeC = make(chan struct{}, 2)
 
 	for i := 0; i <= 10000; i++ {

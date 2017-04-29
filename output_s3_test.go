@@ -16,11 +16,7 @@ func TestS3Output(t *testing.T) {
 	rnd := rand.Int63()
 	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
 
-	output := NewS3Output(path,
-		&S3OutputConfig{
-			bufferConfig: FileOutputConfig{queueLimit: 2},
-		},
-	)
+	output := NewS3Output(path, &FileOutputConfig{queueLimit: 2})
 
 	svc := s3.New(output.session)
 
@@ -64,11 +60,7 @@ func TestS3OutputQueueLimit(t *testing.T) {
 	rnd := rand.Int63()
 	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
 
-	output := NewS3Output(path,
-		&S3OutputConfig{
-			bufferConfig: FileOutputConfig{queueLimit: 100},
-		},
-	)
+	output := NewS3Output(path, &FileOutputConfig{queueLimit: 100})
 	output.closeC = make(chan struct{}, 3)
 
 	svc := s3.New(output.session)

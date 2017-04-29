@@ -122,13 +122,12 @@ func InitPlugins() {
 		registerPlugin(NewFileInput, options, Settings.inputFileLoop)
 	}
 
-	for _, options := range Settings.outputFile {
-		registerPlugin(NewFileOutput, options, &Settings.outputFileConfig)
-	}
-
-	for _, options := range Settings.outputS3 {
-		Settings.outputS3Config.bufferConfig = Settings.outputFileConfig
-		registerPlugin(NewS3Output, options, Settings.outputS3Config)
+	for _, path := range Settings.outputFile {
+		if strings.HasPrefix(path, "s3://") {
+			registerPlugin(NewS3Output, path, &Settings.outputFileConfig)
+		} else {
+			registerPlugin(NewFileOutput, path, &Settings.outputFileConfig)
+		}
 	}
 
 	for _, options := range Settings.inputHTTP {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	_ "net/http/httputil"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -53,7 +54,7 @@ func TestHTTPOutput(t *testing.T) {
 
 	go Start(quit)
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 10; i++ {
 		// 2 http-output, 2 - test output request, 2 - test output http response
 		wg.Add(6) // OPTIONS should be ignored
 		input.EmitPOST()
@@ -61,12 +62,14 @@ func TestHTTPOutput(t *testing.T) {
 		input.EmitGET()
 	}
 
-	if http_output.(*HTTPOutput).activeWorkers < 50 {
-		t.Error("Should create workers for each request", http_output.(*HTTPOutput).activeWorkers)
-	}
-
 	wg.Wait()
 	close(quit)
+
+	activeWorkers := atomic.LoadInt64(&http_output.(*HTTPOutput).activeWorkers)
+
+	if activeWorkers < 50 {
+		t.Error("Should create workers for each request", activeWorkers)
+	}
 
 	Settings.modifierConfig = HTTPModifierConfig{}
 }

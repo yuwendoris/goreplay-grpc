@@ -55,10 +55,6 @@ func NewBinaryOutput(address string, config *BinaryOutputConfig) io.Writer {
 		o.needWorker <- o.config.workers
 	}
 
-	if len(Settings.middleware) > 0 {
-		o.config.TrackResponses = true
-	}
-
 	go o.workerMaster()
 
 	return o
@@ -153,6 +149,11 @@ func (o *BinaryOutput) sendRequest(client *TCPClient, request []byte) {
 	if len(meta) < 2 {
 		return
 	}
+
+    if !isRequestPayload(request) {
+        return
+    }
+
 	uuid := meta[1]
 
 	body := payloadBody(request)
@@ -171,5 +172,5 @@ func (o *BinaryOutput) sendRequest(client *TCPClient, request []byte) {
 }
 
 func (o *BinaryOutput) String() string {
-	return "TCP output: " + o.address
+	return "Binary output: " + o.address
 }
