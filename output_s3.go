@@ -52,19 +52,8 @@ func NewS3Output(pathTemplate string, config *FileOutputConfig) *S3Output {
 }
 
 func (o *S3Output) connect() {
-	region := os.Getenv("AWS_REGION")
-	if region == "" {
-		region = "us-east-1"
-	}
-
-	config := &aws.Config{Region: aws.String(region)}
-
-	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
-		config.Endpoint = aws.String(endpoint)
-	}
-
 	if o.session == nil {
-		o.session = session.New(config)
+		o.session = session.New(awsConfig())
 	}
 }
 

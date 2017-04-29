@@ -25,13 +25,28 @@ type S3ReadCloser struct {
 	sess   *session.Session
 }
 
+func awsConfig() *aws.Config {
+	region := os.Getenv("AWS_DEFAULT_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+
+	config := &aws.Config{Region: aws.String(region)}
+
+	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
+		config.Endpoint = aws.String(endpoint)
+	}
+
+	return config
+}
+
 func NewS3ReadCloser(path string) *S3ReadCloser {
 	bucket, key := parseS3Url(path)
 
 	return &S3ReadCloser{
 		bucket: bucket,
 		key:    key,
-		sess:   session.New(&aws.Config{Region: aws.String("us-east-1")}),
+		sess:   session.New(awsConfig()),
 	}
 }
 
@@ -201,7 +216,7 @@ func (i *FileInput) init() (err error) {
 	var matches []string
 
 	if strings.HasPrefix(i.path, "s3://") {
-		sess := session.New(&aws.Config{Region: aws.String("us-east-1")})
+		sess := session.New(awsConfig())
 		svc := s3.New(sess)
 
 		bucket, key := parseS3Url(i.path)
