@@ -52,6 +52,7 @@ type AppSettings struct {
 	inputRAWTrackResponse bool
 	inputRAWRealIPHeader  string
 	inputRAWProtocol      string
+	inputRAWExpire        time.Duration
 
 	middleware string
 
@@ -127,6 +128,8 @@ func init() {
 	flag.StringVar(&Settings.inputRAWProtocol, "input-raw-protocol", "http", "Specify application protocol of intercepted traffic. Possible values: http, binary")
 
 	flag.StringVar(&Settings.inputRAWRealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
+
+	flag.DurationVar(&Settings.inputRAWExpire, "input-raw-expire", time.Second*2, "How much it should wait for the last TCP packet, till consider that TCP message complete.")
 
 	flag.StringVar(&Settings.middleware, "middleware", "", "Used for modifying traffic using external command")
 
