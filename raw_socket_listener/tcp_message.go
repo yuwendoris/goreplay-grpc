@@ -5,7 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
-	"github.com/buger/goreplay/proto"
+	"github.com/buger/gor-pro/proto"
 	"log"
 	"net"
 	"strconv"

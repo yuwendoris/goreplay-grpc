@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"github.com/Shopify/sarama"
 	"github.com/Shopify/sarama/mocks"
-	"github.com/buger/goreplay/proto"
+	"github.com/buger/gor-pro/proto"
 	"io"
 	"log"
 	"strings"

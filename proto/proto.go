@@ -18,7 +18,7 @@ package proto
 
 import (
 	"bytes"
-	"github.com/buger/gor/byteutils"
+	"github.com/buger/gor-pro/byteutils"
 )
 
 // In HTTP newline defined by 2 bytes (for both windows and *nix support)
@@ -343,7 +343,22 @@ func Body(payload []byte) []byte {
 // Path takes payload and retuns request path: Split(firstLine, ' ')[1]
 func Path(payload []byte) []byte {
 	start := bytes.IndexByte(payload, ' ') + 1
+	eol := bytes.IndexByte(payload[start:], '\r')
 	end := bytes.IndexByte(payload[start:], ' ')
+
+	if eol > 0 && eol < end {
+		return payload[start : start + eol]
+	} else if eol == - 1 { // support for legacy clients with wrong end of lines
+		eol = bytes.IndexByte(payload[start:], '\n')
+
+		if eol > 0 && eol < end {
+			return payload[start : start + eol]
+		}
+	}
+
+	if end < 0 {
+		return payload[start: len(payload)]
+	}
 
 	return payload[start : start+end]
 }

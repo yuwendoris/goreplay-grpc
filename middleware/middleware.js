@@ -183,6 +183,11 @@ function searchResponses(id, searchPattern, callback) {
 //  \r\n
 //  hello
 
+function httpMethod(payload) {
+    var pEnd = payload.indexOf(' ');
+    return payload.slice(0, pEnd).toString("ascii");
+}
+
 function httpPath(payload) {
     var pStart = payload.indexOf(' ') + 1;
     var pEnd = payload.indexOf(' ', pStart);
@@ -255,14 +260,17 @@ function httpHeader(payload, name) {
             }
 
             header.start = -1
+            header.valueStart = -1
             continue;
         } else if (c == 10) { // "\r"
             i++
             continue;
         } else if (c == 58) { // ":" Header/value separator symbol
-            header.valueStart = i + 1;
-            i++
-            continue;
+            if (header.valueStart == -1) {
+                header.valueStart = i + 1;
+                i++
+                continue;
+            }
         }
 
         if (header.start == -1) header.start = i;
@@ -348,6 +356,7 @@ module.exports = {
     parseMessage: parseMessage,
     searchResponses: searchResponses,
     httpPath: httpPath,
+    httpMethod: httpMethod,
     setHttpPath: setHttpPath,
     httpPathParam: httpPathParam,
     setHttpPathParam: setHttpPathParam,
@@ -368,7 +377,7 @@ module.exports = {
 // =========== Tests ==============
 
 function testRunner(){
-    ["init", "parseMessage", "httpPath", "setHttpHeader", "httpPathParam", "httpHeader", "httpBody", "setHttpBody", "httpBodyParam", "httpCookie", "setHttpCookie"].forEach(function(t){
+    ["init", "parseMessage", "httpMethod", "httpPath", "setHttpHeader", "httpPathParam", "httpHeader", "httpBody", "setHttpBody", "httpBodyParam", "httpCookie", "setHttpCookie"].forEach(function(t){
         console.log(`====== Start ${t} =======`)
         eval(`TEST_${t}()`)
         console.log(`====== End ${t} =======`)
@@ -448,6 +457,18 @@ function TEST_httpPath() {
     }
 }
 
+function TEST_httpMethod() {
+    const examplePayload = "GET /test HTTP/1.1\r\n\r\n";
+
+    let payload = Buffer.from(examplePayload);
+    let method = httpMethod(payload);
+
+    if (method != "GET") {
+        return fail(`Path '${method}' != 'GET'`)
+    }
+}
+
+
 function TEST_httpPathParam() {
     let p = Buffer.from("GET / HTTP/1.1\r\n\r\n");
 
@@ -511,9 +532,9 @@ function TEST_httpBodyParam() {
 }
 
 function TEST_httpHeader() {
-    const examplePayload = "GET / HTTP/1.1\r\nUser-Agent: Node\r\nContent-Length:5\r\n\r\nhello";
+    const examplePayload = "GET / HTTP/1.1\r\nHost: localhost:3000\r\nUser-Agent: Node\r\nContent-Length:5\r\n\r\nhello";
 
-    let expected = {"User-Agent": "Node", "Content-Length": "5"}
+    let expected = {"Host": "localhost:3000", "User-Agent": "Node", "Content-Length": "5"}
 
     Object.keys(expected).forEach(function(name){
         let payload = Buffer.from(examplePayload);

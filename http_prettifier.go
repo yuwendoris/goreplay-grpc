@@ -1,7 +1,7 @@
 package main
 
 import (
-    "github.com/buger/goreplay/proto"
+    "github.com/buger/gor-pro/proto"
     "bytes"
     "compress/gzip"
     "strconv"
@@ -52,6 +52,7 @@ func prettifyHTTP(p []byte) []byte {
 
         if err != nil {
             Debug("[Prettifier] GZIP encoding error:", err)
+            return []byte{}
         }
 
         content, _ = ioutil.ReadAll(g)

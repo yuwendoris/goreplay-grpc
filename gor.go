@@ -32,7 +32,10 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+var closeCh chan int
+
 func main() {
+	closeCh = make(chan int)
 	// // Don't exit on panic
 	// defer func() {
 	// 	if r := recover(); r != nil {
@@ -52,7 +55,7 @@ func main() {
 		}
 		dir, _ := os.Getwd()
 
-		log.Println("Started example file server for current dirrectory on address ", args[1])
+		log.Println("Started example file server for current directory on address ", args[1])
 
 		log.Fatal(http.ListenAndServe(args[1], loggingMiddleware(http.FileServer(http.Dir(dir)))))
 	} else {
@@ -84,17 +87,15 @@ func main() {
 
 	if Settings.exitAfter > 0 {
 		log.Println("Running gor for a duration of", Settings.exitAfter)
-		closeCh := make(chan int)
+		closeCh = make(chan int)
 
 		time.AfterFunc(Settings.exitAfter, func() {
 			log.Println("Stopping gor after", Settings.exitAfter)
 			close(closeCh)
 		})
-
-		Start(closeCh)
-	} else {
-		Start(nil)
 	}
+
+	Start(closeCh)
 }
 
 func finalize() {
