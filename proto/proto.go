@@ -18,7 +18,8 @@ package proto
 
 import (
 	"bytes"
-	"github.com/buger/gor-pro/byteutils"
+
+    "github.com/buger/gor-pro/byteutils"
 )
 
 // In HTTP newline defined by 2 bytes (for both windows and *nix support)
@@ -348,18 +349,18 @@ func Path(payload []byte) []byte {
 
 	if eol > 0 {
 		if end == -1 || eol < end {
-			return payload[start : start + eol]
+			return payload[start : start+eol]
 		}
 	} else { // support for legacy clients
 		eol = bytes.IndexByte(payload[start:], '\n')
 
-		if eol > 0 && (end == - 1 || eol < end) {
-			return payload[start : start + eol]
+		if eol > 0 && (end == -1 || eol < end) {
+			return payload[start : start+eol]
 		}
 	}
 
 	if end < 0 {
-		return payload[start: len(payload)]
+		return payload[start:len(payload)]
 	}
 
 	return payload[start : start+end]

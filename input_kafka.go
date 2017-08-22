@@ -2,9 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"log"
+
 	"github.com/Shopify/sarama"
 	"github.com/Shopify/sarama/mocks"
-	"log"
 )
 
 // KafkaInput is used for recieving Kafka messages and
@@ -82,20 +83,21 @@ func (i *KafkaInput) Read(data []byte) (int, error) {
 	if !i.config.useJSON {
 		copy(data, message.Value)
 		return len(message.Value), nil
-	} else {
-		var kafkaMessage KafkaMessage
-		json.Unmarshal(message.Value, &kafkaMessage)
-
-		buf, err := kafkaMessage.Dump()
-		if err != nil {
-			log.Println("Failed to decode access log entry:", err)
-			return 0, err
-		}
-
-		copy(data, buf)
-
-		return len(buf), nil
 	}
+
+	var kafkaMessage KafkaMessage
+	json.Unmarshal(message.Value, &kafkaMessage)
+
+	buf, err := kafkaMessage.Dump()
+	if err != nil {
+		log.Println("Failed to decode access log entry:", err)
+		return 0, err
+	}
+
+	copy(data, buf)
+
+	return len(buf), nil
+
 }
 
 func (i *KafkaInput) String() string {

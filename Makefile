@@ -1,5 +1,5 @@
+SOURCE = $(shell ls -1 *.go | grep -v _test.go)
 SOURCE_PATH = /go/src/github.com/buger/gor-pro/
-
 PORT = 8000
 FADDR = :8000
 CONTAINER=gor-pro
@@ -14,7 +14,7 @@ FADDR = ":8000"
 release: release-x64 release-mac
 
 release-bin:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -tags netgo $(LDFLAGS)
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -o gor -tags netgo $(LDFLAGS)
 
 release-x64:
 	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_PRO_x64.tar.gz gor && rm gor
@@ -29,8 +29,7 @@ install:
 	go install $(MAC_LDFLAGS)
 
 build:
-	docker build -t $(CONTAINER) .
-
+	docker build -t $(CONTAINER) -f Dockerfile.dev .
 
 profile:
 	go build && ./gor --output-http="http://localhost:9000" --input-dummy 0 --input-raw :9000 --input-http :9000 --memprofile=./mem.out --cpuprofile=./cpu.out --stats --output-http-stats --output-http-timeout 100ms
@@ -72,7 +71,7 @@ run:
 	$(RUN) go run $(LDFLAGS) $(SOURCE) --input-dummy=0 --output-http="http://localhost:9000" --input-raw-track-response --input-raw 127.0.0.1:9000 --verbose --debug --middleware "./examples/middleware/echo.sh" --output-file requests.gor
 
 run-2:
-	sudo -E go run $(SOURCE) --input-dummy="" --output-tcp localhost:27001 --verbose --debug
+	$(RUN) go run $(LDFLAGS) $(SOURCE) --input-raw :8000 --input-raw-bpf-filter "dst port 8000" --output-stdout --output-http "http://localhost:8000" --input-dummy=0
 
 run-3:
 	sudo -E go run $(SOURCE) --input-tcp :27001 --output-stdout
