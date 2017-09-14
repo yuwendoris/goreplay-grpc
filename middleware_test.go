@@ -180,11 +180,7 @@ func TestTokenMiddleware(t *testing.T) {
 
 	fromAddr := strings.Replace(from.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
 	// Catch traffic from one service
-<<<<<<< HEAD
-	input := NewRAWInput(fromAddr, EnginePcap, true, testRawExpire, "", "http")
-=======
-	input := NewRAWInput(fromAddr, EnginePcap, true, testRawExpire, "", "")
->>>>>>> d309650589a56db2bfa93c533337e3db1cfb0425
+	input := NewRAWInput(fromAddr, EnginePcap, true, testRawExpire, "", "http", "")
 	defer input.Close()
 
 	// And redirect to another

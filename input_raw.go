@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/buger/gor-pro/proto"
-	raw "github.com/buger/goreplay/raw_socket_listener"
+	raw "github.com/buger/gor-pro/raw_socket_listener"
 )
 
 // RAWInput used for intercepting traffic for given address

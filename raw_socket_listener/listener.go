@@ -96,12 +96,7 @@ const (
 	EnginePcapFile
 )
 
-// NewListener creates and initializes new Listener object
-<<<<<<< HEAD
-func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol) (l *Listener) {
-=======
-func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, bpfFilter string) (l *Listener) {
->>>>>>> d309650589a56db2bfa93c533337e3db1cfb0425
+func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol, bpfFilter string) (l *Listener) {
 	l = &Listener{}
 
 	l.packetsChan = make(chan *packet, 10000)
@@ -115,11 +110,8 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	l.respAliases = make(map[uint32]*TCPMessage)
 	l.respWithoutReq = make(map[uint32]tcpID)
 	l.trackResponse = trackResponse
-<<<<<<< HEAD
 	l.protocol = protocol
-=======
 	l.bpfFilter = bpfFilter
->>>>>>> d309650589a56db2bfa93c533337e3db1cfb0425
 
 	l.addr = addr
 	_port, _ := strconv.Atoi(port)
