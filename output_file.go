@@ -262,7 +262,7 @@ func (o *FileOutput) Close() error {
 		o.file.Close()
 
 		if o.config.onClose != nil {
-			go o.config.onClose(o.file.Name())
+			o.config.onClose(o.file.Name())
 		}
 	}
 
