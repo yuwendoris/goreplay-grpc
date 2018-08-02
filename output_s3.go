@@ -53,7 +53,7 @@ func NewS3Output(pathTemplate string, config *FileOutputConfig) *S3Output {
 
 func (o *S3Output) connect() {
 	if o.session == nil {
-		o.session = session.New(awsConfig())
+		o.session = session.Must(awsConfig())
 	}
 }
 
