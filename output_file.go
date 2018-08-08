@@ -192,9 +192,9 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 		o.currentID = meta[1]
 		o.payloadType = meta[0]
 	}
-	
+
 	o.updateName()
-	
+
 	if o.file == nil || o.currentName != o.file.Name() {
 		o.mu.Lock()
 		o.Close()

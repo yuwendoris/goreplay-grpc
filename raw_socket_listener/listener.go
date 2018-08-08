@@ -72,7 +72,10 @@ type Listener struct {
 	trackResponse bool
 	messageExpire time.Duration
 
-	bpfFilter string
+	bpfFilter     string
+	timestampType string
+
+	bufferSize int
 
 	conn        net.PacketConn
 	pcapHandles []*pcap.Handle
@@ -96,7 +99,7 @@ const (
 	EnginePcapFile
 )
 
-func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol, bpfFilter string) (l *Listener) {
+func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol, bpfFilter string, timestampType string, bufferSize int) (l *Listener) {
 	l = &Listener{}
 
 	l.packetsChan = make(chan *packet, 10000)
@@ -112,6 +115,8 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	l.trackResponse = trackResponse
 	l.protocol = protocol
 	l.bpfFilter = bpfFilter
+	l.timestampType = timestampType
+	l.bufferSize = bufferSize
 
 	l.addr = addr
 	_port, _ := strconv.Atoi(port)
@@ -331,12 +336,42 @@ func (t *Listener) readPcap() {
 
 	for _, d := range devices {
 		go func(device pcap.Interface) {
-			handle, err := pcap.OpenLive(device.Name, 65536, true, t.messageExpire)
+			inactive, err := pcap.NewInactiveHandle(device.Name)
 			if err != nil {
 				log.Println("Pcap Error while opening device", device.Name, err)
 				wg.Done()
 				return
 			}
+
+			if t.timestampType != "" {
+				if tt, terr := pcap.TimestampSourceFromString(t.timestampType); terr != nil {
+					log.Println("Supported timestamp types: ", inactive.SupportedTimestamps(), device.Name)
+				} else if terr := inactive.SetTimestampSource(tt); terr != nil {
+					log.Println("Supported timestamp types: ", inactive.SupportedTimestamps(), device.Name)
+				}
+			}
+
+			if it, err := net.InterfaceByName(device.Name); err == nil {
+				// Auto-guess max length of packet to capture
+				inactive.SetSnapLen(it.MTU + 68*2)
+			} else {
+				inactive.SetSnapLen(65536)
+			}
+
+			inactive.SetTimeout(t.messageExpire)
+			inactive.SetPromisc(true)
+
+			if t.bufferSize > 0 {
+				inactive.SetBufferSize(t.bufferSize)
+			}
+
+			handle, herr := inactive.Activate()
+			if herr != nil {
+				log.Println("PCAP Activate error:", herr)
+				wg.Done()
+				return
+			}
+
 			defer handle.Close()
 
 			t.mu.Lock()
@@ -426,12 +461,12 @@ func (t *Listener) readPcap() {
 					of = 4
 				case layers.LinkTypeLoop:
 					of = 4
-				case layers.LinkTypeRaw:
+				case layers.LinkTypeRaw, layers.LayerTypeIPv4:
 					of = 0
 				case layers.LinkTypeLinuxSLL:
 					of = 16
 				default:
-					log.Println("Unknown packet layer", packet)
+					log.Println("Unknown packet layer", decoder, packet)
 					break
 				}
 
@@ -649,12 +684,6 @@ func (t *Listener) readRAWSocket() {
 }
 
 func (t *Listener) buildPacket(packetSrcIP []byte, packetData []byte, timestamp time.Time) *packet {
-	copyPacketSrcIP := make([]byte, 16)
-	copyPacketData := make([]byte, len(packetData))
-
-	copy(copyPacketSrcIP, packetSrcIP)
-	copy(copyPacketData, packetSrcIP)
-
 	return &packet{
 		srcIP:     packetSrcIP,
 		data:      packetData,
@@ -695,27 +724,33 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 		}
 	}()
 
+	var responseRequest *TCPMessage
 	var message *TCPMessage
 
 	isIncoming := packet.DestPort == t.port
 
 	if t.protocol == ProtocolHTTP {
-		// Seek for 100-expect chunks
-		if parentAck, ok := t.seqWithData[packet.Seq]; ok {
+        if !isIncoming {
+            responseRequest, _ = t.respAliases[packet.Ack]
+        }
+
+        // Seek for 100-expect chunks
+        // `packet.Ack != parentAck` is protection for clients who send data without ignoring server 100-continue response, e.g have data chunks have same Ack
+        if parentAck, ok := t.seqWithData[packet.Seq]; ok && packet.Ack != parentAck {
             // Skip zero-length chunks https://github.com/buger/goreplay/issues/496
             if len(packet.Data) == 0 {
                 return
             }
 
-			// In case if non-first data chunks comes first
-			for _, m := range t.messages {
-				if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
-					t.deleteMessage(m)
+            // In case if non-first data chunks comes first
+            for _, m := range t.messages {
+                if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
+                    t.deleteMessage(m)
 
-					if m.AssocMessage != nil {
-						m.setAssocMessage(nil)
-					}
-
+                    if m.AssocMessage != nil {
+                        m.AssocMessage.setAssocMessage(nil)
+                        m.setAssocMessage(nil)
+                    }
 					for _, pkt := range m.packets {
 						// log.Println("Updating ack", parentAck, pkt.Ack)
 						pkt.UpdateAck(parentAck)
@@ -742,12 +777,6 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 		packet.UpdateAck(alias)
 	}
 
-	var responseRequest *TCPMessage
-
-	if !isIncoming {
-		responseRequest, _ = t.respAliases[packet.Ack]
-	}
-
 	message, ok := t.messages[packet.ID]
 
 	if !ok {
@@ -769,8 +798,9 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 
 	// Handling Expect: 100-continue requests
 	if t.protocol == ProtocolHTTP && message.expectType == httpExpect100Continue && len(message.packets) == message.headerPacket+1 {
-		seq := packet.Seq + uint32(message.Size())
+		seq := packet.Seq + uint32(len(packet.Data))
 		t.seqWithData[seq] = packet.Ack
+
 		message.DataSeq = seq
 		message.complete = false
 
@@ -796,7 +826,13 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 		packet.Data = proto.DeleteHeader(packet.Data, bExpectHeader)
 	}
 
-	// log.Println("Received message:", string(message.Bytes()), message.ID(), t.messages)
+	// If client do sends Expect: 100-continue but do not respect server response
+	if message.expectType == httpExpect100Continue && (message.headerPacket != -1 && len(message.packets) > message.headerPacket+1) {
+		delete(t.seqWithData, message.DataSeq)
+		seq := packet.Seq + uint32(len(packet.Data))
+		t.seqWithData[seq] = packet.Ack
+		message.DataSeq = seq
+	}
 
 	if isIncoming {
 		// If message have multiple packets, delete previous alias

@@ -93,6 +93,11 @@ func headerIndex(payload []byte, name []byte) int {
 						return i - len(name)
 					}
 
+					// We are at the end
+					if i == len(payload) {
+						return -1
+					}
+
 					if payload[i] != name[j] {
 						break
 					}
@@ -338,6 +343,10 @@ func DeleteHeader(payload, name []byte) []byte {
 // Body returns request/response body
 func Body(payload []byte) []byte {
 	// 4 -> len(EMPTY_LINE)
+	if len(payload) < 4 {
+		return []byte{}
+	}
+
 	return payload[MIMEHeadersEndPos(payload):]
 }
 
@@ -467,7 +476,7 @@ func Status(payload []byte) []byte {
 }
 
 var httpMethods []string = []string{
-	"GET ", "OPTI", "HEAD", "POST", "PUT ", "DELE", "TRAC", "CONN", "PATC" /* custom methods */, "BAN", "PURG",
+	"GET ", "OPTI", "HEAD", "POST", "PUT ", "DELE", "TRAC", "CONN", "PATC" /* custom methods */, "BAN ", "PURG", "PROP", "MKCO", "COPY", "MOVE", "LOCK", "UNLO",
 }
 
 func IsHTTPPayload(payload []byte) bool {
