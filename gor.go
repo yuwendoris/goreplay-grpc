@@ -104,6 +104,8 @@ func finalize() {
 			cp.Close()
 		}
 	}
+
+	time.Sleep(100 * time.Millisecond)
 }
 
 func profileCPU(cpuprofile string) {

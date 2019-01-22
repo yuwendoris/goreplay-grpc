@@ -19,10 +19,13 @@ import (
 )
 
 type S3ReadCloser struct {
-	bucket string
-	key    string
-	offset int
-	sess   *session.Session
+	bucket    string
+	key       string
+	offset    int
+	totalSize int
+	readBytes int
+	sess      *session.Session
+	buf       *bytes.Buffer
 }
 
 func awsConfig() *aws.Config {
@@ -42,43 +45,44 @@ func awsConfig() *aws.Config {
 
 func NewS3ReadCloser(path string) *S3ReadCloser {
 	bucket, key := parseS3Url(path)
+	sess := session.Must(session.NewSession(awsConfig()))
+
+	log.Println("[S3 Input] S3 connection succesfully initialized", path)
 
 	return &S3ReadCloser{
 		bucket: bucket,
 		key:    key,
-		sess:   session.New(awsConfig()),
+		sess:   sess,
+		buf:    &bytes.Buffer{},
 	}
 }
 
 func (s *S3ReadCloser) Read(b []byte) (n int, e error) {
-	svc := s3.New(s.sess)
+	if s.readBytes == 0 || s.readBytes+len(b) > s.offset {
+		svc := s3.New(s.sess)
 
-	objectRange := "bytes=" + strconv.Itoa(s.offset)
-	s.offset += 1000000 // Reading in chunks of 1 mb
-	objectRange += "-" + strconv.Itoa(s.offset-1)
+		objectRange := "bytes=" + strconv.Itoa(s.offset)
+		s.offset += 1000000 // Reading in chunks of 1 mb
+		objectRange += "-" + strconv.Itoa(s.offset-1)
 
-	params := &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(s.key),
-		Range:  aws.String(objectRange),
-	}
-	resp, err := svc.GetObject(params)
+		params := &s3.GetObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(s.key),
+			Range:  aws.String(objectRange),
+		}
+		resp, err := svc.GetObject(params)
 
-	if err != nil {
-		return 0, err
-	}
-
-	totalSize, _ := strconv.Atoi(strings.Split(*resp.ContentRange, "/")[1])
-
-	n, e = resp.Body.Read(b)
-
-	// S3 always return EOF when reading byte range
-	// It is not actually error, until we reached end of file
-	if n > 0 && e != nil && s.offset < totalSize {
-		e = nil
+		if err != nil {
+			log.Println("[S3 Input] Error during getting file", s.bucket, s.key, err)
+		} else {
+			s.totalSize, _ = strconv.Atoi(strings.Split(*resp.ContentRange, "/")[1])
+			s.buf.ReadFrom(resp.Body)
+		}
 	}
 
-	return n, e
+	s.readBytes += len(b)
+
+	return s.buf.Read(b)
 }
 
 func (s *S3ReadCloser) Close() error {
@@ -216,7 +220,7 @@ func (i *FileInput) init() (err error) {
 	var matches []string
 
 	if strings.HasPrefix(i.path, "s3://") {
-		sess := session.New(awsConfig())
+		sess := session.Must(session.NewSession(awsConfig()))
 		svc := s3.New(sess)
 
 		bucket, key := parseS3Url(i.path)
@@ -228,7 +232,7 @@ func (i *FileInput) init() (err error) {
 
 		resp, err := svc.ListObjects(params)
 		if err != nil {
-			log.Println("Error while retreiving list of lies from S3", i.path, err)
+			log.Println("Error while retreiving list of files from S3", i.path, err)
 			return err
 		}
 

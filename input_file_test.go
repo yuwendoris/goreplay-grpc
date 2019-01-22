@@ -388,15 +388,16 @@ func TestInputFileFromS3(t *testing.T) {
 	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
 
 	output := NewS3Output(path, &FileOutputConfig{queueLimit: 5000})
-	output.closeC = make(chan struct{}, 2)
+	output.closeC = make(chan struct{}, 10)
 
-	for i := 0; i <= 10000; i++ {
+	for i := 0; i <= 20000; i++ {
 		output.Write([]byte("1 1 1\ntest"))
 
 		if i%5000 == 0 {
 			output.buffer.updateName()
 		}
 	}
+
 	output.Write([]byte("1 1 1\ntest"))
 
 	for i := 0; i < 2; i++ {
@@ -406,7 +407,7 @@ func TestInputFileFromS3(t *testing.T) {
 	input := NewFileInput(fmt.Sprintf("s3://test-gor/%d", rnd), false)
 
 	buf := make([]byte, 1000)
-	for i := 0; i <= 10000; i++ {
+	for i := 0; i <= 19999; i++ {
 		input.Read(buf)
 	}
 
