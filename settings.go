@@ -9,6 +9,7 @@ import (
 )
 
 var VERSION string
+var DEMO string
 
 // MultiOption allows to specify multiple flags with same name and collects all values into array
 type MultiOption []string
@@ -91,7 +92,12 @@ func init() {
 	flag.BoolVar(&Settings.verbose, "verbose", false, "Turn on more verbose output")
 	flag.BoolVar(&Settings.debug, "debug", false, "Turn on debug output, shows all intercepted traffic. Works only when with `verbose` flag")
 	flag.BoolVar(&Settings.stats, "stats", false, "Turn on queue stats output")
-	flag.DurationVar(&Settings.exitAfter, "exit-after", 0, "exit after specified duration")
+
+    if DEMO == "" {
+        flag.DurationVar(&Settings.exitAfter, "exit-after", 0, "exit after specified duration")
+    } else {
+        Settings.exitAfter = 5 * time.Minute
+    }
 
 	flag.BoolVar(&Settings.splitOutput, "split-output", false, "By default each output gets same traffic. If set to `true` it splits traffic equally among all outputs.")
 

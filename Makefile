@@ -7,8 +7,8 @@ RUN = docker run -v `pwd`:$(SOURCE_PATH) -e AWS_ACCESS_KEY_ID=AKIAIOJPOSYCQCWU4Y
 BENCHMARK = BenchmarkRAWInput
 TEST = TestRawListenerBench
 VERSION = DEV-$(shell date +%s)
-LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)_PRO -extldflags \"-static\""
-MAC_LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)_PRO"
+LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)_PRO -extldflags \"-static\" -X main.DEMO=$(DEMO)"
+MAC_LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)_PRO -X main.DEMO=$(DEMO)"
 FADDR = ":8000"
 
 release: release-x64 release-mac
