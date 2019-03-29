@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"sync/atomic"
 	"time"
 
@@ -63,8 +64,12 @@ type response struct {
 type HTTPOutputConfig struct {
 	redirectLimit int
 
-	stats   bool
+	stats      bool
+	workersMin int
+	workersMax int
+	statsMs int
 	workers int
+	queueLen int
 
 	elasticSearch string
 
@@ -112,18 +117,18 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 	o.config = config
 
 	if o.config.stats {
-		o.queueStats = NewGorStat("output_http")
+		o.queueStats = NewGorStat("output_http", o.config.statsMs)
 	}
 
-	o.queue = make(chan []byte, 1000)
-	o.responses = make(chan response, 1000)
+	o.queue = make(chan []byte, o.config.queueLen)
+	o.responses = make(chan response, o.config.queueLen)
 	o.needWorker = make(chan int, 1)
 
 	// Initial workers count
-	if o.config.workers == 0 {
+	if o.config.workersMax == 0 {
 		o.needWorker <- initialDynamicWorkers
 	} else {
-		o.needWorker <- o.config.workers
+		o.needWorker <- o.config.workersMax
 	}
 
 	if o.config.elasticSearch != "" {
@@ -147,11 +152,6 @@ func (o *HTTPOutput) workerMaster() {
 		atomic.AddInt64(&o.activeWorkers, int64(newWorkers))
 		for i := 0; i < newWorkers; i++ {
 			go o.startWorker()
-		}
-
-		// Disable dynamic scaling if workers poll fixed size
-		if o.config.workers != 0 {
-			return
 		}
 	}
 }
@@ -203,17 +203,17 @@ func (o *HTTPOutput) startWorker() {
 			o.sendRequest(client, data)
 		case <-time.After(2 * time.Second):
 			// When dynamic scaling enabled workers die after 2s of inactivity
-			if o.config.workers > 0 {
+			if o.config.workersMin == o.config.workersMax {
 				continue
 			}
 
-			workersCount := atomic.LoadInt64(&o.activeWorkers)
+            workersCount := int(atomic.LoadInt64(&o.activeWorkers))
 
-			// At least 1 startWorker should be alive
-			if workersCount != 1 {
-				atomic.AddInt64(&o.activeWorkers, -1)
-				return
-			}
+            // At least 1 startWorker should be alive
+            if workersCount != 1 && workersCount > o.config.workersMin {
+                atomic.AddInt64(&o.activeWorkers, -1)
+                return
+            }
 		}
 	}
 }
@@ -232,11 +232,18 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 		o.queueStats.Write(len(o.queue))
 	}
 
-	if !Settings.recognizeTCPSessions && o.config.workers == 0 {
-		workersCount := atomic.LoadInt64(&o.activeWorkers)
+	if !Settings.recognizeTCPSessions && o.config.workersMax != o.config.workersMin {
+		workersCount := int(atomic.LoadInt64(&o.activeWorkers))
 
-		if len(o.queue) > int(workersCount) {
-			o.needWorker <- len(o.queue)
+		if len(o.queue) > workersCount {
+			extraWorkersReq := len(o.queue) - workersCount + 1
+			maxWorkersAvailable := o.config.workersMax - workersCount
+			if extraWorkersReq > maxWorkersAvailable {
+				extraWorkersReq = maxWorkersAvailable
+			}
+			if extraWorkersReq > 0 {
+				o.needWorker <- extraWorkersReq
+			}
 		}
 	}
 
@@ -279,6 +286,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	stop := time.Now()
 
 	if err != nil {
+		log.Println("Error when sending ", err, time.Now())
 		Debug("Request error:", err)
 	}
 

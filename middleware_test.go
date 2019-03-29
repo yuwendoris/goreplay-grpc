@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buger/goreplay/proto"
+	"github.com/buger/gor-pro/proto"
 )
 
 type fakeServiceCb func(string, int, []byte)

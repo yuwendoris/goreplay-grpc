@@ -207,7 +207,7 @@ func (t *TCPMessage) checkSeqIntegrity() {
 
 var bEmptyLine = []byte("\r\n\r\n")
 var bBR = []byte("\r\n")
-var bChunkEnd = []byte("0\r\n\r\n")
+var bChunkEnd = []byte("\r\n0\r\n\r\n")
 
 func (t *TCPMessage) updateHeadersPacket() {
 	if len(t.packets) == 1 {
@@ -228,8 +228,9 @@ func (t *TCPMessage) updateHeadersPacket() {
 				t.headerPacket = i
 				return
 			}
-		} else if bytes.Equal(p.Data, bBR) {
-			if bytes.LastIndex(t.packets[i-1].Data, bBR) != -1 {
+		} else if i > 0 && bytes.Equal(p.Data, bBR) {
+			idx := bytes.LastIndex(t.packets[i-1].Data, bBR)
+			if idx != -1 && idx == len(t.packets[i-1].Data)-len(bBR) {
 				t.headerPacket = i
 				return
 			}

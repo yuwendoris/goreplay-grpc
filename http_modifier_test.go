@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/buger/goreplay/proto"
+	"github.com/buger/gor-pro/proto"
 )
 
 func TestHTTPModifierWithoutConfig(t *testing.T) {

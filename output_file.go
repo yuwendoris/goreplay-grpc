@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,6 +32,7 @@ var dateFileNameFuncs = map[string]func(*FileOutput) string{
 type FileOutputConfig struct {
 	flushInterval time.Duration
 	sizeLimit     unitSizeVar
+	outputFileMaxSize unitSizeVar
 	queueLimit    int
 	append        bool
 	bufferPath    string
@@ -50,6 +52,7 @@ type FileOutput struct {
 	currentID      []byte
 	payloadType    []byte
 	closed         bool
+	totalFileSize  int64
 
 	config *FileOutputConfig
 }
@@ -219,7 +222,12 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 	o.writer.Write(data)
 	o.writer.Write([]byte(payloadSeparator))
 
+	o.totalFileSize += int64(len(data) + len(payloadSeparator))
 	o.queueLength++
+
+	if Settings.outputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= int64(Settings.outputFileConfig.outputFileMaxSize) {
+		return len(data), errors.New("File output reached size limit")
+	}
 
 	return len(data), nil
 }
@@ -244,7 +252,9 @@ func (o *FileOutput) flush() {
 
 		if stat, err := o.file.Stat(); err == nil {
 			o.chunkSize = int(stat.Size())
-		}
+		} else {
+            log.Println("Error accessing file sats", err)
+        }
 	}
 }
 
