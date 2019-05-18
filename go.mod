@@ -5,7 +5,9 @@ go 1.12
 require (
 	github.com/Shopify/sarama v1.11.0
 	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61 // indirect
+	github.com/aws/aws-sdk-go v1.19.28
 	github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 // indirect
+	github.com/buger/gor-pro v0.0.0-20190513172006-81e8f98ab6b0
 	github.com/davecgh/go-spew v1.1.0 // indirect
 	github.com/eapache/go-resiliency v0.0.0-20160104191539-b86b1ec0dd42 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934 // indirect
