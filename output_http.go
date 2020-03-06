@@ -79,10 +79,13 @@ type HTTPOutputConfig struct {
 
 	CompatibilityMode bool
 
+  RequestGroup string
+
 	Debug bool
 
 	TrackResponses bool
 }
+
 
 // HTTPOutput plugin manage pool of workers which send request to replayed server
 // By default workers pool is dynamic and starts with 10 workers
@@ -180,7 +183,7 @@ func (o *HTTPOutput) sessionWorkerMaster() {
 			now := time.Now()
 
 			for id, w := range o.workerSessions {
-				if !w.lastActivity.IsZero() && now.Sub(w.lastActivity) >= 60*time.Second {
+				if !w.lastActivity.IsZero() && now.Sub(w.lastActivity) >= 120*time.Second {
 					w.stop <- true
 					delete(o.workerSessions, id)
 					atomic.AddInt64(&o.activeWorkers, -1)

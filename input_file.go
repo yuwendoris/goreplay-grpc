@@ -31,7 +31,10 @@ type S3ReadCloser struct {
 func awsConfig() *aws.Config {
 	region := os.Getenv("AWS_DEFAULT_REGION")
 	if region == "" {
-		region = "us-east-1"
+		region = os.Getenv("AWS_REGION")
+		if region == "" {
+			region = "us-east-1"
+		}
 	}
 
 	config := &aws.Config{Region: aws.String(region)}
@@ -39,6 +42,8 @@ func awsConfig() *aws.Config {
 	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
 		config.Endpoint = aws.String(endpoint)
 	}
+
+	config.CredentialsChainVerboseErrors = aws.Bool(true)
 
 	return config
 }
