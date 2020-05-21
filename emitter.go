@@ -177,6 +177,4 @@ func CopyMulty(src io.Reader, writers ...io.Writer) (err error) {
 
 		i++
 	}
-
-	return err
 }
