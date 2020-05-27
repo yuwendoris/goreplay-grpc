@@ -20,10 +20,12 @@ func TestFileOutput(t *testing.T) {
 	input := NewTestInput()
 	output := NewFileOutput("/tmp/test_requests.gor", &FileOutputConfig{flushInterval: time.Minute, append: true})
 
-	Plugins.Inputs = []io.Reader{input}
-	Plugins.Outputs = []io.Writer{output}
+	plugins := &InOutPlugins{
+		Inputs:  []io.Reader{input},
+		Outputs: []io.Writer{output},
+	}
 
-	go Start(quit)
+	go Start(plugins, quit)
 
 	for i := 0; i < 100; i++ {
 		wg.Add(2)
@@ -44,10 +46,12 @@ func TestFileOutput(t *testing.T) {
 		wg.Done()
 	})
 
-	Plugins.Inputs = []io.Reader{input2}
-	Plugins.Outputs = []io.Writer{output2}
+	plugins2 := &InOutPlugins{
+		Inputs:  []io.Reader{input2},
+		Outputs: []io.Writer{output2},
+	}
 
-	go Start(quit)
+	go Start(plugins2, quit)
 
 	wg.Wait()
 	close(quit)
