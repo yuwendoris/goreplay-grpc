@@ -8,11 +8,10 @@ import (
 	"time"
 )
 
-var wg *sync.WaitGroup
+var wg sync.WaitGroup
 
 // Start initialize loop for sending data from inputs to outputs
 func Start(plugins *InOutPlugins, stop chan int) {
-	wg = &sync.WaitGroup{}
 	if Settings.middleware != "" {
 		middleware := NewMiddleware(Settings.middleware)
 
