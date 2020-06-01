@@ -9,6 +9,7 @@ import (
 )
 
 var wg sync.WaitGroup
+var closeOnce sync.Once
 
 // Start initialize loop for sending data from inputs to outputs
 func Start(plugins *InOutPlugins, stop chan int) {
@@ -51,8 +52,10 @@ func Start(plugins *InOutPlugins, stop chan int) {
 	}
 }
 
-func Close(quit chan  int) {
-	close(quit)
+func Close(quit chan int) {
+	closeOnce.Do(func() {
+		close(quit)
+	})
 	wg.Wait()
 }
 
@@ -182,6 +185,8 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) {
 		}
 	}
 	if er != nil {
-		close(stop)
+		closeOnce.Do(func() {
+			close(stop)
+		})
 	}
 }
