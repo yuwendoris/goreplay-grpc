@@ -52,6 +52,7 @@ func Start(plugins *InOutPlugins, stop chan int) {
 	}
 }
 
+// Close closes all the goroutine and waits for it to finish.
 func Close(quit chan int) {
 	closeOnce.Do(func() {
 		close(quit)
