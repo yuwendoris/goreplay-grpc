@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"time"
 )
 
@@ -35,7 +36,7 @@ func (i *TestInput) Read(data []byte) (int, error) {
 
 		return len(buf) + len(header), nil
 	case <-time.After(10* time.Second):
-		return 0, nil
+		return 0, fmt.Errorf("timed out waiting for read")
 	}
 }
 
