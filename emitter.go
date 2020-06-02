@@ -71,7 +71,6 @@ func Start(plugins *InOutPlugins, stop chan int) {
 func Close(quit chan int) {
 	closeOnce.Do(func() {
 		close(quit)
-		finalize(plugins)
 	})
 	wg.Wait()
 }
