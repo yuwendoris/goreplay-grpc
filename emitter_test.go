@@ -78,7 +78,7 @@ func TestEmitterFiltered(t *testing.T) {
 
 	wg.Wait()
 
-	close(quit)
+	Close(quit)
 
 	Settings.modifierConfig = HTTPModifierConfig{}
 }

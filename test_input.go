@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"time"
 )
 
@@ -21,19 +22,22 @@ func NewTestInput() (i *TestInput) {
 }
 
 func (i *TestInput) Read(data []byte) (int, error) {
-	buf := <-i.data
+	select {
+	case buf := <-i.data:
+		var header []byte
 
-	var header []byte
+		if !i.skipHeader {
+			header = payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
+			copy(data[0:len(header)], header)
+			copy(data[len(header):], buf)
+		} else {
+			copy(data, buf)
+		}
 
-	if !i.skipHeader {
-		header = payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
-		copy(data[0:len(header)], header)
-		copy(data[len(header):], buf)
-	} else {
-		copy(data, buf)
+		return len(buf) + len(header), nil
+	case <-time.After(10* time.Second):
+		return 0, fmt.Errorf("timed out waiting for read")
 	}
-
-	return len(buf) + len(header), nil
 }
 
 func (i *TestInput) EmitBytes(data []byte) {
