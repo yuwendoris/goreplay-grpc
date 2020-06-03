@@ -21,7 +21,7 @@ type fileInputReader struct {
 	data      []byte
 	file      *os.File
 	timestamp int64
-	closed int32 // Value of 0 indicates open.
+	closed    int32 // Value of 0 indicates that the file is still open.
 }
 
 func (f *fileInputReader) parseNext() error {
@@ -65,8 +65,7 @@ func (f *fileInputReader) ReadPayload() []byte {
 	return f.data
 }
 func (f *fileInputReader) Close() error {
-	closed := atomic.LoadInt32(&f.closed)
-	if closed == 0 {
+	if atomic.LoadInt32(&f.closed) == 0 {
 		atomic.StoreInt32(&f.closed, 1)
 		f.file.Close()
 	}
