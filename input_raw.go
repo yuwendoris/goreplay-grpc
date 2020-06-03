@@ -78,7 +78,7 @@ func (i *RAWInput) listen(address string) {
 	host, port, err := net.SplitHostPort(address)
 
 	if err != nil {
-		log.Fatalf("input-raw: error while parsing address: %s , err: %v" , address, err)
+		log.Fatalf("input-raw: error while parsing address: %s", err)
 	}
 
 	i.listener = raw.NewListener(host, port, i.engine, i.trackResponse, i.expire, i.bpfFilter, i.timestampType, i.bufferSize, Settings.inputRAWOverrideSnapLen, Settings.inputRAWImmediateMode)
