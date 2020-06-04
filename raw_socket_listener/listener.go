@@ -372,7 +372,7 @@ func (t *Listener) readPcap() {
 
 			handle, herr := inactive.Activate()
 			if herr != nil {
-				log.Println("PCAP Activate error:", herr)
+				log.Printf("PCAP Activate device '%s' error: %s\n", device.Name, herr)
 				wg.Done()
 				return
 			}

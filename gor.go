@@ -62,6 +62,7 @@ func main() {
 		log.Fatal(http.ListenAndServe(args[1], loggingMiddleware(http.FileServer(http.Dir(dir)))))
 	} else {
 		flag.Parse()
+		checkSettings()
 		plugins = InitPlugins()
 	}
 

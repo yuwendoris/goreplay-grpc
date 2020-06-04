@@ -106,7 +106,7 @@ func InitPlugins() *InOutPlugins {
 	}
 
 	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, Settings.inputRAWExpire, Settings.inputRAWRealIPHeader, Settings.inputRAWBpfFilter, Settings.inputRAWTimestampType, Settings.inputRawBufferSize)
+		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, Settings.inputRAWExpire, Settings.inputRAWRealIPHeader, Settings.inputRAWBpfFilter, Settings.inputRAWTimestampType, Settings.inputRAWBufferSize)
 	}
 
 	for _, options := range Settings.inputTCP {

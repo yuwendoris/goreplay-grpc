@@ -61,8 +61,13 @@ type AppSettings struct {
 	inputRAWTimestampType   string
 	copyBufferSize          int64
 	inputRAWImmediateMode   bool
-	inputRawBufferSize      int64
+	inputRAWBufferSize      int64
 	inputRAWOverrideSnapLen bool
+
+	inputRAWBufferSizeFlag string
+	outputFileSizeFlag     string
+	outputFileMaxSizeFlag  string
+	copyBufferSizeFlag     string
 
 	middleware string
 
@@ -89,9 +94,6 @@ func usage() {
 
 func init() {
 	flag.Usage = usage
-	var (
-		inputRawBufferSize, outputFileMaxSize, copyBufferSize, outputFileSize string
-	)
 
 	flag.StringVar(&Settings.pprof, "http-pprof", "", "Enable profiling. Starts  http server on specified port, exposing special /debug/pprof endpoint. Example: `:8181`")
 	flag.BoolVar(&Settings.verbose, "verbose", false, "Turn on more verbose output")
@@ -124,23 +126,9 @@ func init() {
 	flag.Var(&Settings.outputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
 	flag.DurationVar(&Settings.outputFileConfig.flushInterval, "output-file-flush-interval", time.Second, "Interval for forcing buffer flush to the file, default: 1s.")
 	flag.BoolVar(&Settings.outputFileConfig.append, "output-file-append", false, "The flushed chunk is appended to existence file or not. ")
-	flag.StringVar(&outputFileSize, "output-file-size-limit", "32mb", "Size of each chunk. Default: 32mb")
-	{
-		n, err := bufferParser(outputFileSize, "32MB")
-		if err != nil {
-			log.Fatalf("output-file-size-limit error: %v\n", err)
-		}
-		Settings.outputFileConfig.sizeLimit = n
-	}
+	flag.StringVar(&Settings.outputFileSizeFlag, "output-file-size-limit", "32mb", "Size of each chunk. Default: 32mb")
 	flag.IntVar(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
-	flag.StringVar(&outputFileMaxSize, "output-file-max-size-limit", "1TB", "Max size of output file, Default: 1TB")
-	{
-		n, err := bufferParser(outputFileMaxSize, "1TB")
-		if err != nil {
-			log.Fatalf("output-file-max-size-limit error: %v\n", err)
-		}
-		Settings.outputFileConfig.outputFileMaxSize = n
-	}
+	flag.StringVar(&Settings.outputFileMaxSizeFlag, "output-file-max-size-limit", "1TB", "Max size of output file, Default: 1TB")
 
 	flag.BoolVar(&Settings.prettifyHTTP, "prettify-http", false, "If enabled, will automatically decode requests and responses with: Content-Encodning: gzip and Transfer-Encoding: chunked. Useful for debugging, in conjuction with --output-stdout")
 
@@ -153,33 +141,14 @@ func init() {
 	flag.StringVar(&Settings.inputRAWRealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
 
 	flag.DurationVar(&Settings.inputRAWExpire, "input-raw-expire", time.Second*2, "How much it should wait for the last TCP packet, till consider that TCP message complete.")
-	// libpcap has bug in mac os x. More info: https://github.com/buger/goreplay/issues/730
-	if Settings.inputRAWExpire == time.Second*2 && runtime.GOOS == "darwin" {
-		Settings.inputRAWExpire = time.Second
-	}
 
 	flag.StringVar(&Settings.inputRAWBpfFilter, "input-raw-bpf-filter", "", "BPF filter to write custom expressions. Can be useful in case of non standard network interfaces like tunneling or SPAN port. Example: --input-raw-bpf-filter 'dst port 80'")
 
 	flag.StringVar(&Settings.inputRAWTimestampType, "input-raw-timestamp-type", "", "Possible values: PCAP_TSTAMP_HOST, PCAP_TSTAMP_HOST_LOWPREC, PCAP_TSTAMP_HOST_HIPREC, PCAP_TSTAMP_ADAPTER, PCAP_TSTAMP_ADAPTER_UNSYNCED. This values not supported on all systems, GoReplay will tell you available values of you put wrong one.")
-	flag.StringVar(&copyBufferSize, "copy-buffer-size", "5mb", "Set the buffer size for an individual request (default 5MB)")
-	{
-		n, err := bufferParser(copyBufferSize, "5mb")
-		if err != nil {
-			log.Fatalf("copy-buffer-size error: %v\n", err)
-		}
-		Settings.copyBufferSize = n
-	}
+	flag.StringVar(&Settings.copyBufferSizeFlag, "copy-buffer-size", "5mb", "Set the buffer size for an individual request (default 5MB)")
 	flag.BoolVar(&Settings.inputRAWOverrideSnapLen, "input-raw-override-snaplen", false, "Override the capture snaplen to be 64k. Required for some Virtualized environments")
 	flag.BoolVar(&Settings.inputRAWImmediateMode, "input-raw-immediate-mode", false, "Set pcap interface to immediate mode.")
-
-	flag.StringVar(&inputRawBufferSize, "input-raw-buffer-size", "", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
-	{
-		n, err := bufferParser(inputRawBufferSize, "0")
-		if err != nil {
-			log.Fatalf("input-raw-buffer-size error: %v\n", err)
-		}
-		Settings.inputRawBufferSize = n
-	}
+	flag.StringVar(&Settings.inputRAWBufferSizeFlag, "input-raw-buffer-size", "0", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
 
 	flag.StringVar(&Settings.middleware, "middleware", "", "Used for modifying traffic using external command")
 
@@ -242,6 +211,37 @@ func init() {
 	flag.Var(&Settings.modifierConfig.headerHashFilters, "output-http-header-hash-filter", "WARNING: `output-http-header-hash-filter` DEPRECATED, use `--http-header-hash-limiter` instead")
 
 	flag.Var(&Settings.modifierConfig.paramHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
+}
+
+func checkSettings() {
+	outputFileSize, err := bufferParser(Settings.outputFileSizeFlag, "32MB")
+	if err != nil {
+		log.Fatalf("output-file-size-limit error: %v\n", err)
+	}
+	Settings.outputFileConfig.sizeLimit = outputFileSize
+
+	outputFileMaxSize, err := bufferParser(Settings.outputFileMaxSizeFlag, "1TB")
+	if err != nil {
+		log.Fatalf("output-file-max-size-limit error: %v\n", err)
+	}
+	Settings.outputFileConfig.outputFileMaxSize = outputFileMaxSize
+
+	copyBufferSize, err := bufferParser(Settings.copyBufferSizeFlag, "5mb")
+	if err != nil {
+		log.Fatalf("copy-buffer-size error: %v\n", err)
+	}
+	Settings.copyBufferSize = copyBufferSize
+
+	inputRAWBufferSize, err := bufferParser(Settings.inputRAWBufferSizeFlag, "0")
+	if err != nil {
+		log.Fatalf("input-raw-buffer-size error: %v\n", err)
+	}
+	Settings.inputRAWBufferSize = inputRAWBufferSize
+
+	// libpcap has bug in mac os x. More info: https://github.com/buger/goreplay/issues/730
+	if Settings.inputRAWExpire == time.Second*2 && runtime.GOOS == "darwin" {
+		Settings.inputRAWExpire = time.Second
+	}
 }
 
 var previousDebugTime = time.Now()

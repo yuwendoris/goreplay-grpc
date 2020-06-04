@@ -262,7 +262,7 @@ func TestRawListenerResponse(t *testing.T) {
 	select {
 	case req = <-listener.messagesChan:
 	case <-time.After(time.Millisecond):
-		t.Error("Should return respose immediately")
+		t.Error("Should return request immediately")
 		return
 	}
 
@@ -598,7 +598,7 @@ func TestResponseZeroContentLength(t *testing.T) {
 	select {
 	case req = <-listener.messagesChan:
 	case <-time.After(time.Millisecond):
-		t.Error("Should return respose immediately")
+		t.Error("Should return request immediately")
 		return
 	}
 
