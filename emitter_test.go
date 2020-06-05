@@ -22,7 +22,6 @@ func TestEmitter(t *testing.T) {
 		Outputs: []io.Writer{output},
 	}
 
-	checkSettings()
 	go Start(plugins, quit)
 
 	for i := 0; i < 1000; i++ {

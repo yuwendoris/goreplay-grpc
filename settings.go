@@ -211,6 +211,12 @@ func init() {
 	flag.Var(&Settings.modifierConfig.headerHashFilters, "output-http-header-hash-filter", "WARNING: `output-http-header-hash-filter` DEPRECATED, use `--http-header-hash-limiter` instead")
 
 	flag.Var(&Settings.modifierConfig.paramHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
+
+	// default values, using for tests
+	Settings.outputFileConfig.sizeLimit = 33554432
+	Settings.outputFileConfig.outputFileMaxSize = 1099511627776
+	Settings.copyBufferSize = 5242880
+	Settings.inputRAWBufferSize = 0
 }
 
 func checkSettings() {
