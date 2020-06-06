@@ -22,16 +22,17 @@ func TestOutputLimiter(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		input.EmitGET()
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func TestInputLimiter(t *testing.T) {
@@ -48,16 +49,17 @@ func TestInputLimiter(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		input.(*Limiter).plugin.(*TestInput).EmitGET()
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 // Should limit all requests
@@ -74,16 +76,17 @@ func TestPercentLimiter1(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		input.EmitGET()
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 // Should not limit at all
@@ -101,14 +104,15 @@ func TestPercentLimiter2(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		input.EmitGET()
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }

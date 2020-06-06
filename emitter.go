@@ -8,13 +8,24 @@ import (
 	"time"
 )
 
-var wg sync.WaitGroup
-var closeOnce sync.Once
+type emitter struct {
+	sync.WaitGroup
+	quit chan int
+}
+
+func NewEmitter(quit chan int) *emitter {
+	return &emitter{
+		quit: quit,
+	}
+}
 
 // Start initialize loop for sending data from inputs to outputs
-func Start(plugins *InOutPlugins, stop chan int) {
-	if Settings.middleware != "" {
-		middleware := NewMiddleware(Settings.middleware)
+func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
+	e.Add(1)
+	defer e.Done()
+
+	if middlewareCmd != "" {
+		middleware := NewMiddleware(middlewareCmd)
 
 		for _, in := range plugins.Inputs {
 			middleware.ReadFrom(in)
@@ -26,31 +37,34 @@ func Start(plugins *InOutPlugins, stop chan int) {
 				middleware.ReadFrom(r)
 			}
 		}
-		wg.Add(1)
+		e.Add(1)
 		go func() {
+			defer e.Done()
 			if err := CopyMulty(middleware, plugins.Outputs...); err != nil {
 				log.Println("Error during copy: ", err)
-				Close(stop)
+				e.close()
 			}
 		}()
 	} else {
 		for _, in := range plugins.Inputs {
-			wg.Add(1)
+			e.Add(1)
 			go func(in io.Reader) {
+				defer e.Done()
 				if err := CopyMulty(in, plugins.Outputs...); err != nil {
 					log.Println("Error during copy: ", err)
-					Close(stop)
+					e.close()
 				}
 			}(in)
 		}
 
 		for _, out := range plugins.Outputs {
 			if r, ok := out.(io.Reader); ok {
-				wg.Add(1)
+				e.Add(1)
 				go func(r io.Reader) {
+					defer e.Done()
 					if err := CopyMulty(r, plugins.Outputs...); err != nil {
 						log.Println("Error during copy: ", err)
-						Close(stop)
+						e.close()
 					}
 				}(r)
 			}
@@ -59,7 +73,7 @@ func Start(plugins *InOutPlugins, stop chan int) {
 
 	for {
 		select {
-		case <-stop:
+		case <-e.quit:
 			finalize(plugins)
 			return
 		case <-time.After(100 * time.Millisecond):
@@ -67,17 +81,22 @@ func Start(plugins *InOutPlugins, stop chan int) {
 	}
 }
 
+func (e *emitter) close() {
+	select {
+	case <- e.quit:
+	default:
+		close(e.quit)
+	}
+}
+
 // Close closes all the goroutine and waits for it to finish.
-func Close(quit chan int) {
-	closeOnce.Do(func() {
-		close(quit)
-	})
-	wg.Wait()
+func (e *emitter) Close() {
+	e.close()
+	e.Wait()
 }
 
 // CopyMulty copies from 1 reader to multiple writers
 func CopyMulty(src io.Reader, writers ...io.Writer) error {
-	defer wg.Done()
 	buf := make([]byte, Settings.copyBufferSize)
 	wIndex := 0
 	modifier := NewHTTPModifier(&Settings.modifierConfig)
@@ -192,5 +211,4 @@ func CopyMulty(src io.Reader, writers ...io.Writer) error {
 
 		i++
 	}
-
 }

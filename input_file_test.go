@@ -18,7 +18,6 @@ import (
 var _ = log.Println
 
 func TestInputFileWithGET(t *testing.T) {
-
 	input := NewTestInput()
 	rg := NewRequestGenerator([]io.Reader{input}, func() { input.EmitGET() }, 1)
 	readPayloads := [][]byte{}
@@ -305,7 +304,6 @@ func (expectedCaptureFile *CaptureFile) PayloadsEqual(other [][]byte) bool {
 }
 
 func CreateCaptureFile(requestGenerator *RequestGenerator) *CaptureFile {
-
 	f, err := ioutil.TempFile("", "testmainconf")
 	if err != nil {
 		panic(err)
@@ -316,7 +314,6 @@ func CreateCaptureFile(requestGenerator *RequestGenerator) *CaptureFile {
 	readPayloads := [][]byte{}
 	output := NewTestOutput(func(data []byte) {
 		readPayloads = append(readPayloads, Duplicate(data))
-
 		requestGenerator.wg.Done()
 	})
 
@@ -326,23 +323,25 @@ func CreateCaptureFile(requestGenerator *RequestGenerator) *CaptureFile {
 		Inputs:  requestGenerator.inputs,
 		Outputs: []io.Writer{output, outputFile},
 	}
+	for _, input := range requestGenerator.inputs {
+		plugins.All = append(plugins.All, input)
+	}
+	plugins.All = append(plugins.All, output, outputFile)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	requestGenerator.emit()
 	requestGenerator.wg.Wait()
 
 	time.Sleep(100 * time.Millisecond)
-	outputFile.Close()
-
-	close(quit)
+	emitter.Close()
 
 	return NewExpectedCaptureFile(readPayloads, f)
 
 }
 
 func ReadFromCaptureFile(captureFile *os.File, count int, callback writeCallback) (err error) {
-
 	quit := make(chan int)
 	wg := new(sync.WaitGroup)
 
@@ -356,9 +355,11 @@ func ReadFromCaptureFile(captureFile *os.File, count int, callback writeCallback
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
 	wg.Add(count)
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	done := make(chan int, 1)
 	go func() {
@@ -372,8 +373,7 @@ func ReadFromCaptureFile(captureFile *os.File, count int, callback writeCallback
 	case <-time.After(2 * time.Second):
 		err = errors.New("Timed out")
 	}
-	close(quit)
-
+	emitter.close()
 	return
 
 }

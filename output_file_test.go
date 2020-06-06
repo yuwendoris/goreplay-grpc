@@ -24,8 +24,10 @@ func TestFileOutput(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		wg.Add(2)
@@ -34,10 +36,7 @@ func TestFileOutput(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 	output.flush()
-
-	close(quit)
-
-	quit = make(chan int)
+	emitter.Close()
 
 	var counter int64
 	input2 := NewFileInput("/tmp/test_requests.gor", false)
@@ -51,10 +50,10 @@ func TestFileOutput(t *testing.T) {
 		Outputs: []io.Writer{output2},
 	}
 
-	go Start(plugins2, quit)
+	go emitter.Start(plugins2, Settings.middleware)
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }
 
 func TestFileOutputWithNameCleaning(t *testing.T) {

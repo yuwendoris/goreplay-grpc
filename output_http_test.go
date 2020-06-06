@@ -52,8 +52,10 @@ func TestHTTPOutput(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{http_output, output},
 	}
+	plugins.All = append(plugins.All, input, output, http_output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 1; i++ {
 		// 2 http-output, 2 - test output request, 2 - test output http response
@@ -64,9 +66,7 @@ func TestHTTPOutput(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	close(quit)
-
+	emitter.Close()
 	Settings.modifierConfig = HTTPModifierConfig{}
 }
 
@@ -94,16 +94,16 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	wg.Add(1)
 	input.EmitGET()
 
 	wg.Wait()
-
-	close(quit)
-
+	emitter.Close()
 	Settings.modifierConfig = HTTPModifierConfig{}
 }
 
@@ -123,8 +123,10 @@ func TestOutputHTTPSSL(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	wg.Add(2)
 
@@ -132,7 +134,7 @@ func TestOutputHTTPSSL(t *testing.T) {
 	input.EmitGET()
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }
 
 func BenchmarkHTTPOutput(b *testing.B) {
@@ -152,8 +154,10 @@ func BenchmarkHTTPOutput(b *testing.B) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < b.N; i++ {
 		wg.Add(1)
@@ -161,6 +165,5 @@ func BenchmarkHTTPOutput(b *testing.B) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }

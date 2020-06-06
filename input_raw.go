@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net"
+	"os"
 	"time"
 
 	"github.com/buger/goreplay/proto"
@@ -52,7 +53,10 @@ func NewRAWInput(address string, engine int, trackResponse bool, expire time.Dur
 }
 
 func (i *RAWInput) Read(data []byte) (int, error) {
-	msg := <-i.data
+	msg, ok := <-i.data
+	if !ok {
+		return 0, os.ErrClosed
+	}
 	buf := msg.Bytes()
 
 	var header []byte
@@ -109,5 +113,6 @@ func (i *RAWInput) String() string {
 func (i *RAWInput) Close() error {
 	i.listener.Close()
 	close(i.quit)
+	close(i.data)
 	return nil
 }

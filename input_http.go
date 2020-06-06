@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"os"
 	"time"
 )
 
@@ -27,7 +28,10 @@ func NewHTTPInput(address string) (i *HTTPInput) {
 }
 
 func (i *HTTPInput) Read(data []byte) (int, error) {
-	buf := <-i.data
+	buf, ok := <-i.data
+	if !ok {
+		return 0, os.ErrClosed
+	}
 
 	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
 
@@ -35,6 +39,11 @@ func (i *HTTPInput) Read(data []byte) (int, error) {
 	copy(data[len(header):], buf)
 
 	return len(buf) + len(header), nil
+}
+
+func (i *HTTPInput) Close() error {
+	close(i.data)
+	return nil
 }
 
 func (i *HTTPInput) handler(w http.ResponseWriter, r *http.Request) {

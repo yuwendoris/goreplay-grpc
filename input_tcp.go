@@ -38,10 +38,18 @@ func NewTCPInput(address string, config *TCPInputConfig) (i *TCPInput) {
 }
 
 func (i *TCPInput) Read(data []byte) (int, error) {
-	buf := <-i.data
+	buf, ok := <-i.data
+	if !ok {
+		return 0, os.ErrClosed
+	}
 	copy(data, buf)
 
 	return len(buf), nil
+}
+
+func (i *TCPInput) Close() error {
+	close(i.data)
+	return nil
 }
 
 func (i *TCPInput) listen(address string) {
