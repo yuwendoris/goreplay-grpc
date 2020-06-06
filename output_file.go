@@ -281,7 +281,6 @@ func (o *FileOutput) Close() error {
 	o.Lock()
 	defer o.Unlock()
 	return o.closeLocked()
-	return nil
 }
 
 // IsClosed returns if the output file is closed or not.
