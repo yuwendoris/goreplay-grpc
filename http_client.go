@@ -420,11 +420,7 @@ func (c *HTTPClient) send(data []byte, readBytes int, timeout time.Time) (respon
 	}
 
 	if err != nil && readBytes == 0 {
-		maxRead := 100
-		if readBytes < maxRead {
-			maxRead = readBytes
-		}
-		Debug("[HTTPClient] Response read timeout error", err, c.conn, readBytes, string(c.respBuf[:maxRead]))
+		Debug("[HTTPClient] Response read timeout error", err, c.conn, readBytes, string(c.respBuf[:readBytes]))
 		response = errorPayload(HTTP_TIMEOUT)
 		c.Disconnect()
 		return
