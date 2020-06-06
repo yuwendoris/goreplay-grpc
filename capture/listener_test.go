@@ -12,7 +12,7 @@ import (
 func TestRawListenerInput(t *testing.T) {
 	var req, resp *TCPMessage
 
-	listener := NewListener("", "0", EnginePcapFile, true, 10*time.Millisecond, "", "", 0, false, false)
+	listener := NewListener("", "0", EnginePcap, true, 10*time.Millisecond, "", "", 0, false, false)
 	defer listener.Close()
 
 	reqPacket := buildPacket(true, 1, 1, []byte("GET / HTTP/1.1\r\n\r\n"), time.Now())

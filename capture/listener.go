@@ -74,8 +74,8 @@ type Listener struct {
 	conn        net.PacketConn
 	pcapHandles []*pcap.Handle
 
-	quit    chan bool
-	readyCh bool
+	quit  chan bool
+	ready bool
 }
 
 type request struct {
@@ -353,7 +353,6 @@ func (t *Listener) readPcap() {
 			} else {
 				inactive.SetSnapLen(65536)
 			}
-			inactive.SetSnapLen(65536)
 			inactive.SetTimeout(t.messageExpire)
 			inactive.SetPromisc(true)
 			inactive.SetImmediateMode(t.immediateMode)
@@ -581,7 +580,7 @@ func (t *Listener) readPcap() {
 
 	wg.Wait()
 	t.Lock()
-	t.readyCh = true
+	t.ready = true
 	t.Unlock()
 }
 
@@ -597,7 +596,7 @@ func (t *Listener) readPcapFile() {
 		}
 
 		t.Lock()
-		t.readyCh = true
+		t.ready = true
 		t.Unlock()
 		packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 
@@ -667,19 +666,15 @@ func (t *Listener) readRAWSocket() {
 	}
 	var bufChan = make(chan *RSPacket, 1000)
 	t.Lock()
-	t.readyCh = true
+	t.ready = true
 	t.Unlock()
 	go func() {
-		buffer := 64 * 1024
-		if t.bufferSize > int64(buffer) {
-			buffer = int(t.bufferSize)
-		}
 		for {
 			// Re-allocate data object to avoid data collision
-			buf := make([]byte, buffer)
+			var buf [64 * 104 * 1024]byte
 			// Note: ReadFrom receive messages without IP header
-			n, addr, err := t.conn.ReadFrom(buf)
-			bufChan <- &RSPacket{buf, addr, err, n}
+			n, addr, err := t.conn.ReadFrom(buf[:])
+			bufChan <- &RSPacket{buf[:], addr, err, n}
 		}
 	}()
 	for {
