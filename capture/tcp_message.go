@@ -1,11 +1,10 @@
-package rawSocket
+package capture
 
 import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
-	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -13,8 +12,6 @@ import (
 
 	"github.com/buger/goreplay/proto"
 )
-
-var _ = log.Println
 
 // TCPMessage ensure that all TCP packets for given request is received, and processed in right sequence
 // Its needed because all TCP message can be fragmented or re-transmitted

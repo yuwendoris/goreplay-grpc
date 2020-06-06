@@ -1,21 +1,15 @@
 /*
-Package rawSocket provides traffic sniffier using RAW sockets.
-
-Capture traffic from socket using RAW_SOCKET's
-http://en.wikipedia.org/wiki/Raw_socket
-
-RAW_SOCKET allow you listen for traffic on any port (e.g. sniffing) because they operate on IP level.
-
+Package capture provides traffic sniffier using RAW sockets.
+Capture traffic from socket using RAW_SOCKET's http://en.wikipedia.org/wiki/Raw_socket
+RAW_SOCKET allows you to listen for traffic from any port (e.g. sniffing) because they operate on IP level.
 Ports is TCP feature, same as flow control, reliable transmission and etc.
-
 This package implements own TCP layer: TCP packets is parsed using tcp_packet.go, and flow control is managed by tcp_message.go
 */
-package rawSocket
+package capture
 
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -33,8 +27,6 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
-var _ = fmt.Println
-
 type packet struct {
 	srcIP     []byte
 	data      []byte
@@ -43,7 +35,7 @@ type packet struct {
 
 // Listener handle traffic capture
 type Listener struct {
-	mu sync.Mutex
+	sync.Mutex
 	// buffer of TCPMessages waiting to be send
 	// ID -> TCPMessage
 	messages map[tcpID]*TCPMessage
@@ -83,7 +75,7 @@ type Listener struct {
 	pcapHandles []*pcap.Handle
 
 	quit    chan bool
-	readyCh chan bool
+	readyCh bool
 }
 
 type request struct {
@@ -106,7 +98,6 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	l.packetsChan = make(chan *packet, 10000)
 	l.messagesChan = make(chan *TCPMessage, 10000)
 	l.quit = make(chan bool)
-	l.readyCh = make(chan bool, 1)
 
 	l.messages = make(map[tcpID]*TCPMessage)
 	l.ackAliases = make(map[uint32]uint32)
@@ -139,6 +130,8 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 			go l.readPcap()
 		case EnginePcapFile:
 			go l.readPcapFile()
+		case EngineRawSocket:
+			go l.readRAWSocket()
 		default:
 			log.Fatal("Unknown traffic interception engine:", engine)
 		}
@@ -340,6 +333,7 @@ func (t *Listener) readPcap() {
 		go func(device pcap.Interface) {
 			inactive, err := pcap.NewInactiveHandle(device.Name)
 			if err != nil {
+				inactive.CleanUp()
 				log.Println("Pcap Error while opening device", device.Name, err)
 				wg.Done()
 				return
@@ -359,7 +353,7 @@ func (t *Listener) readPcap() {
 			} else {
 				inactive.SetSnapLen(65536)
 			}
-
+			inactive.SetSnapLen(65536)
 			inactive.SetTimeout(t.messageExpire)
 			inactive.SetPromisc(true)
 			inactive.SetImmediateMode(t.immediateMode)
@@ -379,7 +373,7 @@ func (t *Listener) readPcap() {
 
 			defer handle.Close()
 
-			t.mu.Lock()
+			t.Lock()
 			t.pcapHandles = append(t.pcapHandles, handle)
 
 			var bpfDstHost, bpfSrcHost string
@@ -425,7 +419,7 @@ func (t *Listener) readPcap() {
 					return
 				}
 			}
-			t.mu.Unlock()
+			t.Unlock()
 
 			var decoder gopacket.Decoder
 
@@ -526,7 +520,7 @@ func (t *Listener) readPcap() {
 					continue
 				}
 
-				dataOffset := (data[12] & 0xF0) >> 4
+				dataOffset := data[12] >> 4
 				isFIN := data[13]&0x01 != 0
 
 				// We need only packets with data inside
@@ -586,7 +580,9 @@ func (t *Listener) readPcap() {
 	}
 
 	wg.Wait()
-	t.readyCh <- true
+	t.Lock()
+	t.readyCh = true
+	t.Unlock()
 }
 
 func (t *Listener) readPcapFile() {
@@ -600,7 +596,9 @@ func (t *Listener) readPcapFile() {
 			}
 		}
 
-		t.readyCh <- true
+		t.Lock()
+		t.readyCh = true
+		t.Unlock()
 		packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 
 		for {
@@ -640,7 +638,7 @@ func (t *Listener) readPcapFile() {
 				continue
 			}
 
-			dataOffset := (data[12] & 0xF0) >> 4
+			dataOffset := data[12] >> 4
 			isFIN := data[13]&0x01 != 0
 
 			// We need only packets with data inside
@@ -657,32 +655,45 @@ func (t *Listener) readPcapFile() {
 func (t *Listener) readRAWSocket() {
 	conn, e := net.ListenPacket("ip:tcp", t.addr)
 	t.conn = conn
-
 	if e != nil {
 		log.Fatal(e)
 	}
-
 	defer t.conn.Close()
-
-	buf := make([]byte, 64*1024) // 64kb
-
-	t.readyCh <- true
-
+	type RSPacket struct {
+		buf  []byte
+		addr net.Addr
+		err  error
+		n    int
+	}
+	var bufChan = make(chan *RSPacket, 1000)
+	t.Lock()
+	t.readyCh = true
+	t.Unlock()
+	go func() {
+		buffer := 64 * 1024
+		if t.bufferSize > int64(buffer) {
+			buffer = int(t.bufferSize)
+		}
+		for {
+			// Re-allocate data object to avoid data collision
+			buf := make([]byte, buffer)
+			// Note: ReadFrom receive messages without IP header
+			n, addr, err := t.conn.ReadFrom(buf)
+			bufChan <- &RSPacket{buf, addr, err, n}
+		}
+	}()
 	for {
-		// Note: ReadFrom receive messages without IP header
-		n, addr, err := t.conn.ReadFrom(buf)
-
-		if err != nil {
-			if strings.HasSuffix(err.Error(), "closed network connection") {
+		packet := <-bufChan
+		if packet.err != nil {
+			if strings.HasSuffix(packet.err.Error(), "closed network connection") {
 				return
-			} else {
-				continue
 			}
+			continue
 		}
 
-		if n > 0 {
-			if t.isValidPacket(buf[:n]) {
-				t.packetsChan <- t.buildPacket([]byte(addr.(*net.IPAddr).IP), buf[:n], time.Now())
+		if packet.n > 0 {
+			if t.isValidPacket(packet.buf[:packet.n]) {
+				t.packetsChan <- t.buildPacket([]byte(packet.addr.(*net.IPAddr).IP), packet.buf[:packet.n], time.Now())
 			}
 		}
 	}
@@ -701,16 +712,13 @@ func (t *Listener) isValidPacket(buf []byte) bool {
 	// http://en.wikipedia.org/wiki/Transmission_Control_Protocol
 	destPort := binary.BigEndian.Uint16(buf[2:4])
 	srcPort := binary.BigEndian.Uint16(buf[0:2])
-
 	// Because RAW_SOCKET can't be bound to port, we have to control it by ourself
 	if destPort == t.port || (t.trackResponse && srcPort == t.port) {
 		// Get the 'data offset' (size of the TCP header in 32-bit words)
-		dataOffset := (buf[12] & 0xF0) >> 4
-
+		dataOffset := buf[12] >> 4
 		// We need only packets with data inside
 		// Check that the buffer is larger than the size of the TCP header
 		if len(buf) > int(dataOffset*4) {
-			// We should create new buffer because go slices is pointers. So buffer data shoud be immutable.
 			return true
 		}
 	}
@@ -877,15 +885,6 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 				}
 			}
 		}
-	}
-}
-
-func (t *Listener) IsReady() bool {
-	select {
-	case <-t.readyCh:
-		return true
-	case <-time.After(5 * time.Second):
-		return false
 	}
 }
 
