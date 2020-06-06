@@ -431,10 +431,6 @@ func testChunkedSequence(t *testing.T, listener *Listener, packets ...*TCPPacket
 	if len(listener.respAliases) != 0 {
 		t.Fatal("respAliases non empty:", listener.respAliases)
 	}
-
-	if len(listener.respWithoutReq) != 0 {
-		t.Fatal("respWithoutReq non empty:", listener.respWithoutReq)
-	}
 }
 
 // permutation using heap algorithm https://en.wikipedia.org/wiki/Heap%27s_algorithm
