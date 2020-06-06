@@ -47,7 +47,7 @@ test_all:
 	$(RUN) go test ./... -timeout 120s $(LDFLAGS) $(ARGS) -v
 
 testone:
-	$(RUN) go test ./... -timeout 4s $(LDFLAGS) -run $(TEST) $(ARGS) -v
+	$(RUN) go test ./. -timeout 60s $(LDFLAGS) -run $(TEST) $(ARGS) -v
 
 cover:
 	$(RUN) go test $(ARGS) -race -v -timeout 15s -coverprofile=coverage.out

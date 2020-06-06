@@ -385,7 +385,7 @@ func Duplicate(data []byte) (duplicate []byte) {
 
 func TestInputFileFromS3(t *testing.T) {
 	rnd := rand.Int63()
-	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
+	path := fmt.Sprintf("s3://test-gor-eu/%d/requests.gz", rnd)
 
 	output := NewS3Output(path, &FileOutputConfig{queueLimit: 5000})
 	output.closeC = make(chan struct{}, 10)
@@ -404,7 +404,7 @@ func TestInputFileFromS3(t *testing.T) {
 		<-output.closeC
 	}
 
-	input := NewFileInput(fmt.Sprintf("s3://test-gor/%d", rnd), false)
+	input := NewFileInput(fmt.Sprintf("s3://test-gor-eu/%d", rnd), false)
 
 	buf := make([]byte, 1000)
 	for i := 0; i <= 19999; i++ {

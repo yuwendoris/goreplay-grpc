@@ -41,9 +41,16 @@ func awsConfig() *aws.Config {
 
 	if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
 		config.Endpoint = aws.String(endpoint)
+		log.Println("Custom endpoint:", endpoint)
 	}
 
+	log.Println("Connecting to S3. Region: " + region)
+
 	config.CredentialsChainVerboseErrors = aws.Bool(true)
+
+	if os.Getenv("AWS_DEBUG") != "" {
+		config.LogLevel = aws.LogLevel(aws.LogDebugWithHTTPBody)
+	}
 
 	return config
 }
