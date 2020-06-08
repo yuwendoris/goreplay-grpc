@@ -157,6 +157,9 @@ func CopyMulty(src io.Reader, writers ...io.Writer) error {
 
 			if Settings.splitOutput {
 				if Settings.recognizeTCPSessions {
+					if !PRO {
+						log.Fatal("Detailed TCP sessions work only with PRO license")
+					}
 					hasher := fnv.New32a()
 					// First 20 bytes contain tcp session
 					id := payloadID(payload)
