@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+var DEMO string
+
 // MultiOption allows to specify multiple flags with same name and collects all values into array
 type MultiOption []string
 
@@ -32,9 +34,9 @@ type AppSettings struct {
 	stats     bool
 	exitAfter time.Duration
 
-	pprof string
-
-	splitOutput bool
+	splitOutput          bool
+	recognizeTCPSessions bool
+	pprof                string
 
 	inputDummy   MultiOption
 	outputDummy  MultiOption
@@ -57,6 +59,7 @@ type AppSettings struct {
 	inputRAWTrackResponse   bool
 	inputRAWRealIPHeader    string
 	inputRAWExpire          time.Duration
+	inputRAWProtocol        string
 	inputRAWBpfFilter       string
 	inputRAWTimestampType   string
 	copyBufferSize          int64
@@ -71,13 +74,16 @@ type AppSettings struct {
 
 	middleware string
 
-	inputHTTP  MultiOption
-	outputHTTP MultiOption
-
+	inputHTTP    MultiOption
+	outputHTTP   MultiOption
 	prettifyHTTP bool
 
 	outputHTTPConfig HTTPOutputConfig
-	modifierConfig   HTTPModifierConfig
+
+	outputBinary       MultiOption
+	outputBinaryConfig BinaryOutputConfig
+
+	modifierConfig HTTPModifierConfig
 
 	inputKafkaConfig  KafkaConfig
 	outputKafkaConfig KafkaConfig
@@ -99,9 +105,16 @@ func init() {
 	flag.BoolVar(&Settings.verbose, "verbose", false, "Turn on more verbose output")
 	flag.BoolVar(&Settings.debug, "debug", false, "Turn on debug output, shows all intercepted traffic. Works only when with `verbose` flag")
 	flag.BoolVar(&Settings.stats, "stats", false, "Turn on queue stats output")
-	flag.DurationVar(&Settings.exitAfter, "exit-after", 0, "exit after specified duration")
+
+	if DEMO == "" {
+		flag.DurationVar(&Settings.exitAfter, "exit-after", 0, "exit after specified duration")
+	} else {
+		Settings.exitAfter = 5 * time.Minute
+	}
 
 	flag.BoolVar(&Settings.splitOutput, "split-output", false, "By default each output gets same traffic. If set to `true` it splits traffic equally among all outputs.")
+
+	flag.BoolVar(&Settings.recognizeTCPSessions, "recognize-tcp-sessions", false, "[PRO] If turned on http output will create separate worker for each TCP session. Splitting output will session based as well.")
 
 	flag.Var(&Settings.inputDummy, "input-dummy", "Used for testing outputs. Emits 'Get /' request every 1s")
 	flag.Var(&Settings.outputDummy, "output-dummy", "DEPRECATED: use --output-stdout instead")
@@ -127,8 +140,10 @@ func init() {
 	flag.DurationVar(&Settings.outputFileConfig.flushInterval, "output-file-flush-interval", time.Second, "Interval for forcing buffer flush to the file, default: 1s.")
 	flag.BoolVar(&Settings.outputFileConfig.append, "output-file-append", false, "The flushed chunk is appended to existence file or not. ")
 	flag.StringVar(&Settings.outputFileSizeFlag, "output-file-size-limit", "32mb", "Size of each chunk. Default: 32mb")
-	flag.IntVar(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
+	flag.Int64Var(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
 	flag.StringVar(&Settings.outputFileMaxSizeFlag, "output-file-max-size-limit", "1TB", "Max size of output file, Default: 1TB")
+
+	flag.StringVar(&Settings.outputFileConfig.bufferPath, "output-file-buffer", "/tmp", "The path for temporary storing current buffer: \n\tgor --input-raw :80 --output-file s3://mybucket/logs/%Y-%m-%d.gz --output-file-buffer /mnt/logs")
 
 	flag.BoolVar(&Settings.prettifyHTTP, "prettify-http", false, "If enabled, will automatically decode requests and responses with: Content-Encodning: gzip and Transfer-Encoding: chunked. Useful for debugging, in conjuction with --output-stdout")
 
@@ -137,6 +152,8 @@ func init() {
 	flag.BoolVar(&Settings.inputRAWTrackResponse, "input-raw-track-response", false, "If turned on Gor will track responses in addition to requests, and they will be available to middleware and file output.")
 
 	flag.StringVar(&Settings.inputRAWEngine, "input-raw-engine", "libpcap", "Intercept traffic using `libpcap` (default), and `raw_socket`")
+
+	flag.StringVar(&Settings.inputRAWProtocol, "input-raw-protocol", "http", "Specify application protocol of intercepted traffic. Possible values: http, binary")
 
 	flag.StringVar(&Settings.inputRAWRealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
 
@@ -155,6 +172,8 @@ func init() {
 	// flag.Var(&Settings.inputHTTP, "input-http", "Read requests from HTTP, should be explicitly sent from your application:\n\t# Listen for http on 9000\n\tgor --input-http :9000 --output-http staging.com")
 
 	flag.Var(&Settings.outputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
+
+	/* outputHTTPConfig */
 	flag.IntVar(&Settings.outputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
 	flag.BoolVar(&Settings.outputHTTPConfig.CompatibilityMode, "output-http-compatibility-mode", false, "Use standard Go client, instead of built-in implementation. Can be slower, but more compatible.")
 
@@ -170,8 +189,18 @@ func init() {
 	flag.IntVar(&Settings.outputHTTPConfig.statsMs, "output-http-stats-ms", 5000, "Report http output queue stats to console every N milliseconds. default: 5000")
 	flag.BoolVar(&Settings.outputHTTPConfig.OriginalHost, "http-original-host", false, "Normally gor replaces the Host http header with the host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
 	flag.BoolVar(&Settings.outputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
-
 	flag.StringVar(&Settings.outputHTTPConfig.elasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
+	/* outputHTTPConfig */
+
+	flag.Var(&Settings.outputBinary, "output-binary", "Forwards incoming binary payloads to given address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --input-raw-protocol binary --output-binary staging.com:80")
+	/* outputBinaryConfig */
+	flag.IntVar(&Settings.outputBinaryConfig.BufferSize, "output-tcp-response-buffer", 0, "TCP response buffer size, all data after this size will be discarded.")
+	flag.IntVar(&Settings.outputBinaryConfig.workers, "output-binary-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
+	flag.DurationVar(&Settings.outputBinaryConfig.Timeout, "output-binary-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-binary-timeout 30s")
+	flag.BoolVar(&Settings.outputBinaryConfig.TrackResponses, "output-binary-track-response", false, "If turned on, Binary output responses will be set to all outputs like stdout, file and etc.")
+
+	flag.BoolVar(&Settings.outputBinaryConfig.Debug, "output-binary-debug", false, "Enables binary debug output.")
+	/* outputBinaryConfig */
 
 	flag.StringVar(&Settings.outputKafkaConfig.host, "output-kafka-host", "", "Read request and response stats from Kafka:\n\tgor --input-raw :8080 --output-kafka-host '192.168.0.1:9092,192.168.0.2:9092'")
 	flag.StringVar(&Settings.outputKafkaConfig.topic, "output-kafka-topic", "", "Read request and response stats from Kafka:\n\tgor --input-raw :8080 --output-kafka-topic 'kafka-log'")

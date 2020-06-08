@@ -106,7 +106,7 @@ func InitPlugins() *InOutPlugins {
 	}
 
 	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, Settings.inputRAWExpire, Settings.inputRAWRealIPHeader, Settings.inputRAWBpfFilter, Settings.inputRAWTimestampType, Settings.inputRAWBufferSize)
+		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, Settings.inputRAWExpire, Settings.inputRAWRealIPHeader, Settings.inputRAWProtocol, Settings.inputRAWBpfFilter, Settings.inputRAWTimestampType, Settings.inputRAWBufferSize)
 	}
 
 	for _, options := range Settings.inputTCP {
@@ -121,8 +121,12 @@ func InitPlugins() *InOutPlugins {
 		registerPlugin(NewFileInput, options, Settings.inputFileLoop)
 	}
 
-	for _, options := range Settings.outputFile {
-		registerPlugin(NewFileOutput, options, &Settings.outputFileConfig)
+	for _, path := range Settings.outputFile {
+		if strings.HasPrefix(path, "s3://") {
+			registerPlugin(NewS3Output, path, &Settings.outputFileConfig)
+		} else {
+			registerPlugin(NewFileOutput, path, &Settings.outputFileConfig)
+		}
 	}
 
 	for _, options := range Settings.inputHTTP {
@@ -140,6 +144,10 @@ func InitPlugins() *InOutPlugins {
 
 	for _, options := range Settings.outputHTTP {
 		registerPlugin(NewHTTPOutput, options, &Settings.outputHTTPConfig)
+	}
+
+	for _, options := range Settings.outputBinary {
+		registerPlugin(NewBinaryOutput, options, &Settings.outputBinaryConfig)
 	}
 
 	if Settings.outputKafkaConfig.host != "" && Settings.outputKafkaConfig.topic != "" {

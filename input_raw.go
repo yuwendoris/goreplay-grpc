@@ -19,6 +19,7 @@ type RAWInput struct {
 	realIPHeader  []byte
 	trackResponse bool
 	listener      *raw.Listener
+	protocol      raw.TCPProtocol
 	bpfFilter     string
 	timestampType string
 	bufferSize    int64
@@ -32,7 +33,7 @@ const (
 )
 
 // NewRAWInput constructor for RAWInput. Accepts address with port as argument.
-func NewRAWInput(address string, engine int, trackResponse bool, expire time.Duration, realIPHeader string, bpfFilter string, timestampType string, bufferSize int64) (i *RAWInput) {
+func NewRAWInput(address string, engine int, trackResponse bool, expire time.Duration, realIPHeader string, protocol string, bpfFilter string, timestampType string, bufferSize int64) (i *RAWInput) {
 	i = new(RAWInput)
 	i.data = make(chan *raw.TCPMessage)
 	i.address = address
@@ -44,6 +45,18 @@ func NewRAWInput(address string, engine int, trackResponse bool, expire time.Dur
 	i.trackResponse = trackResponse
 	i.timestampType = timestampType
 	i.bufferSize = bufferSize
+
+	switch protocol {
+	case "http":
+		i.protocol = raw.ProtocolHTTP
+	case "binary":
+		i.protocol = raw.ProtocolBinary
+		if !PRO {
+			log.Fatal("Binary protocols can be used only with PRO license")
+		}
+	default:
+		log.Fatal("Unsupported protocol:", protocol)
+	}
 
 	i.listen(address)
 	i.listener.IsReady()
@@ -81,7 +94,7 @@ func (i *RAWInput) listen(address string) {
 		log.Fatalf("input-raw: error while parsing address: %s", err)
 	}
 
-	i.listener = raw.NewListener(host, port, i.engine, i.trackResponse, i.expire, i.bpfFilter, i.timestampType, i.bufferSize, Settings.inputRAWOverrideSnapLen, Settings.inputRAWImmediateMode)
+	i.listener = raw.NewListener(host, port, i.engine, i.trackResponse, i.expire, i.protocol, i.bpfFilter, i.timestampType, i.bufferSize, Settings.inputRAWOverrideSnapLen, Settings.inputRAWImmediateMode)
 
 	ch := i.listener.Receiver()
 

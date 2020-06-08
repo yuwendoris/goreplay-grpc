@@ -35,7 +35,7 @@ func (i *TestInput) Read(data []byte) (int, error) {
 		}
 
 		return len(buf) + len(header), nil
-	case <-time.After(10* time.Second):
+	case <-time.After(10 * time.Second):
 		return 0, fmt.Errorf("timed out waiting for read")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	_ "net/http/httputil"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -55,7 +56,7 @@ func TestHTTPOutput(t *testing.T) {
 
 	go Start(plugins, quit)
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 10; i++ {
 		// 2 http-output, 2 - test output request, 2 - test output http response
 		wg.Add(6) // OPTIONS should be ignored
 		input.EmitPOST()
@@ -64,8 +65,13 @@ func TestHTTPOutput(t *testing.T) {
 	}
 
 	wg.Wait()
-
 	close(quit)
+
+	activeWorkers := atomic.LoadInt64(&http_output.(*HTTPOutput).activeWorkers)
+
+	if activeWorkers < 50 {
+		t.Error("Should create workers for each request", activeWorkers)
+	}
 
 	Settings.modifierConfig = HTTPModifierConfig{}
 }
@@ -107,7 +113,7 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	Settings.modifierConfig = HTTPModifierConfig{}
 }
 
-func TestOutputHTTPSSL(t *testing.T) {
+func TestHTTPOutputSSL(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
@@ -133,6 +139,53 @@ func TestOutputHTTPSSL(t *testing.T) {
 
 	wg.Wait()
 	close(quit)
+}
+
+func TestHTTPOutputSessions(t *testing.T) {
+	wg := new(sync.WaitGroup)
+	quit := make(chan int)
+
+	input := NewTestInput()
+	input.skipHeader = true
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		wg.Done()
+	}))
+	defer server.Close()
+
+	Settings.recognizeTCPSessions = true
+	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: true})
+
+	plugins := &InOutPlugins{
+		Inputs:  []io.Reader{input},
+		Outputs: []io.Writer{output},
+	}
+	go Start(plugins, quit)
+
+	uuid1 := []byte("1234567890123456789a0000")
+	uuid2 := []byte("1234567890123456789d0000")
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1) // OPTIONS should be ignored
+		copy(uuid1[20:], randByte(4))
+		input.EmitBytes([]byte("1 " + string(uuid1) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
+	}
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1) // OPTIONS should be ignored
+		copy(uuid2[20:], randByte(4))
+		input.EmitBytes([]byte("1 " + string(uuid2) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
+	}
+
+	wg.Wait()
+
+	if output.(*HTTPOutput).activeWorkers != 2 {
+		t.Error("Should have only 2 workers", output.(*HTTPOutput).activeWorkers)
+	}
+
+	close(quit)
+
+	Settings.recognizeTCPSessions = false
 }
 
 func BenchmarkHTTPOutput(b *testing.B) {

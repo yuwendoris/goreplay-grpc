@@ -305,7 +305,7 @@ func Path(payload []byte) []byte {
 	}
 
 	if end < 0 {
-		return payload[start:len(payload)]
+		return payload[start:]
 	}
 
 	return payload[start : start+end]

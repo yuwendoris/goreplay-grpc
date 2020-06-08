@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"hash/fnv"
 	"io"
 	"log"
 	"sync"
@@ -155,15 +156,25 @@ func CopyMulty(src io.Reader, writers ...io.Writer) error {
 			}
 
 			if Settings.splitOutput {
-				// Simple round robin
-				if _, err := writers[wIndex].Write(payload); err != nil {
-					return err
-				}
+				if Settings.recognizeTCPSessions {
+					hasher := fnv.New32a()
+					// First 20 bytes contain tcp session
+					id := payloadID(payload)
+					hasher.Write(id[:20])
 
-				wIndex++
+					wIndex = int(hasher.Sum32()) % len(writers)
+					writers[wIndex].Write(payload)
+				} else {
+					// Simple round robin
+					if _, err := writers[wIndex].Write(payload); err != nil {
+						return err
+					}
 
-				if wIndex >= len(writers) {
-					wIndex = 0
+					wIndex++
+
+					if wIndex >= len(writers) {
+						wIndex = 0
+					}
 				}
 			} else {
 				for _, dst := range writers {
