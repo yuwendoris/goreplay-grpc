@@ -17,7 +17,7 @@ type TCPInput struct {
 	listener net.Listener
 	address  string
 	config   *TCPInputConfig
-	stop       chan bool // Channel used only to indicate goroutine should shutdown
+	stop     chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 type TCPInputConfig struct {

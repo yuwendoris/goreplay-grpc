@@ -84,7 +84,7 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 
 func (e *emitter) close() {
 	select {
-	case <- e.quit:
+	case <-e.quit:
 	default:
 		close(e.quit)
 	}

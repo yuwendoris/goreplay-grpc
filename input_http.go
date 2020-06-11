@@ -13,7 +13,7 @@ type HTTPInput struct {
 	data     chan []byte
 	address  string
 	listener net.Listener
-	stop       chan bool // Channel used only to indicate goroutine should shutdown
+	stop     chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewHTTPInput constructor for HTTPInput. Accepts address with port which he will listen on.
