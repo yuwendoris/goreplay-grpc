@@ -41,7 +41,7 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 		e.Add(1)
 		go func() {
 			defer e.Done()
-			if err := CopyMulty(middleware, plugins.Outputs...); err != nil {
+			if err := CopyMulty(e.quit, middleware, plugins.Outputs...); err != nil {
 				log.Println("Error during copy: ", err)
 				e.close()
 			}
@@ -51,7 +51,7 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 			e.Add(1)
 			go func(in io.Reader) {
 				defer e.Done()
-				if err := CopyMulty(in, plugins.Outputs...); err != nil {
+				if err := CopyMulty(e.quit, in, plugins.Outputs...); err != nil {
 					log.Println("Error during copy: ", err)
 					e.close()
 				}
@@ -63,7 +63,7 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 				e.Add(1)
 				go func(r io.Reader) {
 					defer e.Done()
-					if err := CopyMulty(r, plugins.Outputs...); err != nil {
+					if err := CopyMulty(e.quit, r, plugins.Outputs...); err != nil {
 						log.Println("Error during copy: ", err)
 						e.close()
 					}
@@ -97,7 +97,7 @@ func (e *emitter) Close() {
 }
 
 // CopyMulty copies from 1 reader to multiple writers
-func CopyMulty(src io.Reader, writers ...io.Writer) error {
+func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 	buf := make([]byte, Settings.copyBufferSize)
 	wIndex := 0
 	modifier := NewHTTPModifier(&Settings.modifierConfig)
@@ -108,6 +108,12 @@ func CopyMulty(src io.Reader, writers ...io.Writer) error {
 	for {
 		var nr int
 		nr, err := src.Read(buf)
+
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
 
 		if err == io.EOF || err == ErrorStopped {
 			return nil
