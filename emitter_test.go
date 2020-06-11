@@ -26,7 +26,7 @@ func TestEmitter(t *testing.T) {
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.middleware)
 
-	for i := 0; i < 1; i++ {
+	for i := 0; i < 1000; i++ {
 		wg.Add(1)
 		input.EmitGET()
 	}
