@@ -21,12 +21,15 @@ type Middleware struct {
 
 	Stdin  io.Writer
 	Stdout io.Reader
+
+	stop     chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 func NewMiddleware(command string) *Middleware {
 	m := new(Middleware)
 	m.command = command
 	m.data = make(chan []byte, 1000)
+	m.stop = make(chan bool)
 
 	commands := strings.Split(command, " ")
 	cmd := exec.Command(commands[0], commands[1:]...)
@@ -122,19 +125,33 @@ func (m *Middleware) read(from io.Reader) {
 			Debug("[MIDDLEWARE-MASTER] Received:", string(buf))
 		}
 
-		m.data <- buf
+		select {
+		case <-m.stop:
+			return
+		case m.data <- buf:
+		}
 	}
 
 	return
 }
 
 func (m *Middleware) Read(data []byte) (int, error) {
-	buf := <-m.data
-	copy(data, buf)
+	var buf []byte
+	select {
+	case <-m.stop:
+		return 0, ErrorStopped
+	case buf = <-m.data:
+	}
 
+	copy(data, buf)
 	return len(buf), nil
 }
 
 func (m *Middleware) String() string {
 	return fmt.Sprintf("Modifying traffic using '%s' command", m.command)
+}
+
+func (m *Middleware) Close() error {
+	close(m.stop)
+	return nil
 }

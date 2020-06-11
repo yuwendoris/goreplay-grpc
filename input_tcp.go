@@ -51,7 +51,6 @@ func (i *TCPInput) Read(data []byte) (int, error) {
 	return len(buf), nil
 }
 
-// Close closes the data channel so that data
 func (i *TCPInput) Close() error {
 	close(i.stop)
 	return nil

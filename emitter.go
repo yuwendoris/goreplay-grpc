@@ -46,6 +46,15 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 				e.close()
 			}
 		}()
+		go func() {
+			for {
+				select {
+				case <-e.quit:
+					middleware.Close()
+					return
+				}
+			}
+		}()
 	} else {
 		for _, in := range plugins.Inputs {
 			e.Add(1)
