@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-var StoppedError = errors.New("reading stopped")
+// ErrorStopped is the error returned when the go routines reading the input is stopped.
+var ErrorStopped = errors.New("reading stopped")
 
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
@@ -28,7 +29,7 @@ func (i *TestInput) Read(data []byte) (int, error) {
 	var buf []byte
 	select {
 	case <-i.stop:
-		return 0, StoppedError
+		return 0, ErrorStopped
 	case buf = <-i.data:
 	}
 

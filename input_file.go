@@ -156,7 +156,7 @@ func (i *FileInput) Read(data []byte) (int, error) {
 	var buf []byte
 	select {
 	case <-i.exit:
-		return 0, StoppedError
+		return 0, ErrorStopped
 	case buf = <-i.data:
 	}
 	copy(data, buf)

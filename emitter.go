@@ -109,7 +109,7 @@ func CopyMulty(src io.Reader, writers ...io.Writer) error {
 		var nr int
 		nr, err := src.Read(buf)
 
-		if err == io.EOF || err == StoppedError {
+		if err == io.EOF || err == ErrorStopped {
 			return nil
 		}
 		if err != nil {

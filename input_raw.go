@@ -55,7 +55,7 @@ func (i *RAWInput) Read(data []byte) (int, error) {
 	var msg *raw.TCPMessage
 	select {
 	case <-i.quit:
-		return 0, StoppedError
+		return 0, ErrorStopped
 	case msg = <-i.data:
 	}
 
