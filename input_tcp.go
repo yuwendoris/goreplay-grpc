@@ -17,6 +17,7 @@ type TCPInput struct {
 	listener net.Listener
 	address  string
 	config   *TCPInputConfig
+	stop       chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 type TCPInputConfig struct {
@@ -31,6 +32,7 @@ func NewTCPInput(address string, config *TCPInputConfig) (i *TCPInput) {
 	i.data = make(chan []byte, 1000)
 	i.address = address
 	i.config = config
+	i.stop = make(chan bool)
 
 	i.listen(address)
 
@@ -38,17 +40,20 @@ func NewTCPInput(address string, config *TCPInputConfig) (i *TCPInput) {
 }
 
 func (i *TCPInput) Read(data []byte) (int, error) {
-	buf, ok := <-i.data
-	if !ok {
-		return 0, os.ErrClosed
+	var buf []byte
+	select {
+	case <-i.stop:
+		return 0, StoppedError
+	case buf = <-i.data:
 	}
 	copy(data, buf)
 
 	return len(buf), nil
 }
 
+// Close closes the data channel so that data
 func (i *TCPInput) Close() error {
-	close(i.data)
+	close(i.stop)
 	return nil
 }
 

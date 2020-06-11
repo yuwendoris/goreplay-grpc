@@ -153,12 +153,13 @@ func (i *FileInput) init() (err error) {
 }
 
 func (i *FileInput) Read(data []byte) (int, error) {
-	buf, ok := <-i.data
-	if !ok {
-		return 0, os.ErrClosed
+	var buf []byte
+	select {
+	case <-i.exit:
+		return 0, StoppedError
+	case buf = <-i.data:
 	}
 	copy(data, buf)
-
 	return len(buf), nil
 }
 
@@ -241,7 +242,6 @@ func (i *FileInput) Close() error {
 	i.mu.Lock()
 
 	close(i.exit)
-	close(i.data)
 	for _, r := range i.readers {
 		r.Close()
 	}

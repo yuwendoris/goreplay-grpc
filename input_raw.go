@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"net"
-	"os"
 	"time"
 
 	"github.com/buger/goreplay/proto"
@@ -15,7 +14,7 @@ type RAWInput struct {
 	data          chan *raw.TCPMessage
 	address       string
 	expire        time.Duration
-	quit          chan bool
+	quit          chan bool // Channel used only to indicate goroutine should shutdown
 	engine        int
 	realIPHeader  []byte
 	trackResponse bool
@@ -53,10 +52,13 @@ func NewRAWInput(address string, engine int, trackResponse bool, expire time.Dur
 }
 
 func (i *RAWInput) Read(data []byte) (int, error) {
-	msg, ok := <-i.data
-	if !ok {
-		return 0, os.ErrClosed
+	var msg *raw.TCPMessage
+	select {
+	case <-i.quit:
+		return 0, StoppedError
+	case msg = <-i.data:
 	}
+
 	buf := msg.Bytes()
 
 	var header []byte
@@ -113,6 +115,5 @@ func (i *RAWInput) String() string {
 func (i *RAWInput) Close() error {
 	i.listener.Close()
 	close(i.quit)
-	close(i.data)
 	return nil
 }

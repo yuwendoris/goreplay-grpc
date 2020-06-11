@@ -5,7 +5,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"os"
 	"time"
 )
 
@@ -14,6 +13,7 @@ type HTTPInput struct {
 	data     chan []byte
 	address  string
 	listener net.Listener
+	stop       chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewHTTPInput constructor for HTTPInput. Accepts address with port which he will listen on.
@@ -21,6 +21,7 @@ func NewHTTPInput(address string) (i *HTTPInput) {
 	i = new(HTTPInput)
 	i.data = make(chan []byte, 10000)
 	i.address = address
+	i.stop = make(chan bool)
 
 	i.listen(address)
 
@@ -28,9 +29,11 @@ func NewHTTPInput(address string) (i *HTTPInput) {
 }
 
 func (i *HTTPInput) Read(data []byte) (int, error) {
-	buf, ok := <-i.data
-	if !ok {
-		return 0, os.ErrClosed
+	var buf []byte
+	select {
+	case <-i.stop:
+		return 0, StoppedError
+	case buf = <-i.data:
 	}
 
 	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
@@ -42,7 +45,7 @@ func (i *HTTPInput) Read(data []byte) (int, error) {
 }
 
 func (i *HTTPInput) Close() error {
-	close(i.data)
+	close(i.stop)
 	return nil
 }
 

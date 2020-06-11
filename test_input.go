@@ -3,31 +3,36 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"io"
+	"errors"
 	"time"
 )
+
+var StoppedError = errors.New("reading stopped")
 
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
 	data       chan []byte
 	skipHeader bool
+	stop       chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewTestInput constructor for TestInput
 func NewTestInput() (i *TestInput) {
 	i = new(TestInput)
 	i.data = make(chan []byte, 100)
-
+	i.stop = make(chan bool)
 	return
 }
 
 func (i *TestInput) Read(data []byte) (int, error) {
-	buf, ok := <-i.data
-	if !ok {
-		return 0, io.EOF
+	var buf []byte
+	select {
+	case <-i.stop:
+		return 0, StoppedError
+	case buf = <-i.data:
 	}
-	var header []byte
 
+	var header []byte
 	if !i.skipHeader {
 		header = payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
 		copy(data[0:len(header)], header)
@@ -40,7 +45,7 @@ func (i *TestInput) Read(data []byte) (int, error) {
 }
 
 func (i *TestInput) Close() error {
-	close(i.data)
+	close(i.stop)
 	return nil
 }
 

@@ -13,6 +13,7 @@ type emitter struct {
 	quit chan int
 }
 
+// NewEmitter creates and initializes new `emitter` object.
 func NewEmitter(quit chan int) *emitter {
 	return &emitter{
 		quit: quit,
@@ -108,7 +109,7 @@ func CopyMulty(src io.Reader, writers ...io.Writer) error {
 		var nr int
 		nr, err := src.Read(buf)
 
-		if err == io.EOF {
+		if err == io.EOF || err == StoppedError {
 			return nil
 		}
 		if err != nil {
