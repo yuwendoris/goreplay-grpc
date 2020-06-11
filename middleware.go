@@ -22,7 +22,7 @@ type Middleware struct {
 	Stdin  io.Writer
 	Stdout io.Reader
 
-	stop     chan bool // Channel used only to indicate goroutine should shutdown
+	stop chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 func NewMiddleware(command string) *Middleware {

@@ -49,11 +49,14 @@ func TestFileOutput(t *testing.T) {
 		Inputs:  []io.Reader{input2},
 		Outputs: []io.Writer{output2},
 	}
+	plugins2.All = append(plugins2.All, input2, output2)
 
-	go emitter.Start(plugins2, Settings.middleware)
+	quit2 := make(chan int)
+	emitter2 := NewEmitter(quit2)
+	go emitter2.Start(plugins2, Settings.middleware)
 
 	wg.Wait()
-	emitter.Close()
+	emitter2.Close()
 }
 
 func TestFileOutputWithNameCleaning(t *testing.T) {
