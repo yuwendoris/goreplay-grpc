@@ -1,4 +1,4 @@
-package rawSocket
+package capture
 
 import (
 	"bytes"
@@ -420,14 +420,6 @@ func testChunkedSequence(t *testing.T, listener *Listener, packets ...*TCPPacket
 		t.Fatal("packetsChan non empty:", listener.packetsChan)
 	}
 
-	if len(listener.messagesChan) != 0 {
-		t.Fatal("messagesChan non empty:", <-listener.messagesChan)
-	}
-
-	if len(listener.messages) != 0 {
-		t.Fatal("Messages non empty:", listener.messages)
-	}
-
 	if len(listener.ackAliases) != 0 {
 		t.Fatal("ackAliases non empty:", listener.ackAliases)
 	}
@@ -439,30 +431,34 @@ func testChunkedSequence(t *testing.T, listener *Listener, packets ...*TCPPacket
 	if len(listener.respAliases) != 0 {
 		t.Fatal("respAliases non empty:", listener.respAliases)
 	}
-
-	if len(listener.respWithoutReq) != 0 {
-		t.Fatal("respWithoutReq non empty:", listener.respWithoutReq)
-	}
 }
 
-func permutation(n int, list []*TCPPacket) []*TCPPacket {
-	if len(list) == 1 {
-		return list
+// permutation using heap algorithm https://en.wikipedia.org/wiki/Heap%27s_algorithm
+func permutation(a []*TCPPacket, f func([]*TCPPacket)) {
+	n := len(a)
+	c := make([]int, n)
+	f(a)
+	i := 0
+	for i < n {
+		if c[i] < i {
+			if i&1 != 1 {
+				a[0], a[i] = a[i], a[0]
+			} else {
+				a[c[i]], a[i] = a[i], a[c[i]]
+			}
+			f(a)
+			c[i]++
+			i = 0
+		} else {
+			c[i] = 0
+			i++
+		}
 	}
-
-	k := n % len(list)
-
-	first := []*TCPPacket{list[k]}
-	next := make([]*TCPPacket, len(list)-1)
-
-	copy(next, append(list[:k], list[k+1:]...))
-
-	return append(first, permutation(n/len(list), next)...)
 }
 
 // Response comes before Request
 func TestRawListenerChunkedWrongOrder(t *testing.T) {
-	listener := NewListener("", "0", EnginePcap, true, 10*time.Millisecond, "", "", 0, false, false)
+	listener := NewListener("", "0", EnginePcap, true, 10*time.Second, "", "", 0, false, false)
 	defer listener.Close()
 
 	reqPacket1 := firstPacket([]byte("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nExpect: 100-continue\r\n\r\n"))
@@ -474,12 +470,11 @@ func TestRawListenerChunkedWrongOrder(t *testing.T) {
 
 	respPacket2 := responsePacket(reqPacket4, []byte("HTTP/1.1 200 OK\r\n\r\n"))
 
-	// Should re-construct message from all possible combinations
-	for i := 0; i < 6*5*4*3*2*1; i++ {
-		packets := permutation(i, []*TCPPacket{reqPacket1, reqPacket2, reqPacket3, reqPacket4, respPacket1, respPacket2})
-
-		testChunkedSequence(t, listener, packets...)
+	f := func(p []*TCPPacket) {
+		testChunkedSequence(t, listener, p...)
 	}
+	// Should re-construct message from all possible combinations
+	permutation([]*TCPPacket{reqPacket1, reqPacket2, reqPacket3, reqPacket4, respPacket1, respPacket2}, f)
 }
 
 func chunkedPostMessage() []*TCPPacket {

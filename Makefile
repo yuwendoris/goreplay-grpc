@@ -63,8 +63,8 @@ bench:
 	$(RUN) go test $(LDFLAGS) -v -run NOT_EXISTING -bench $(BENCHMARK) -benchtime 5s
 
 profile_test:
-	$(RUN) go test $(LDFLAGS) -run $(TEST) ./raw_socket_listener/. $(ARGS) -memprofile mem.mprof -cpuprofile cpu.out
-	$(RUN) go test $(LDFLAGS) -run $(TEST) ./raw_socket_listener/. $(ARGS) -c
+	$(RUN) go test $(LDFLAGS) -run $(TEST) ./capture/. $(ARGS) -memprofile mem.mprof -cpuprofile cpu.out
+	$(RUN) go test $(LDFLAGS) -run $(TEST) ./capture/. $(ARGS) -c
 
 # Used mainly for debugging, because docker container do not have access to parent machine ports
 run:

@@ -1,4 +1,4 @@
-package rawSocket
+package capture
 
 import (
 	"bytes"
