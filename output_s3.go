@@ -3,16 +3,17 @@ package main
 import (
 	_ "bufio"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	_ "github.com/aws/aws-sdk-go/service/s3/s3manager"
 	_ "io"
 	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	_ "github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 // S3Output output plugin
@@ -22,7 +23,7 @@ type S3Output struct {
 	buffer  *FileOutput
 	session *session.Session
 	config  *FileOutputConfig
-	closeC  chan struct{}
+	closeCh chan struct{}
 }
 
 // NewS3Output constructor for FileOutput, accepts path
@@ -42,18 +43,18 @@ func NewS3Output(pathTemplate string, config *FileOutputConfig) *S3Output {
 	}
 
 	rnd := rand.Int63()
-	buffer_name := fmt.Sprintf("gor_output_s3_%d_buf_", rnd)
+	bufferName := fmt.Sprintf("gor_output_s3_%d_buf_", rnd)
 
 	pathParts := strings.Split(pathTemplate, "/")
-	buffer_name += pathParts[len(pathParts)-1]
+	bufferName += pathParts[len(pathParts)-1]
 
 	if strings.HasSuffix(o.pathTemplate, ".gz") {
-		buffer_name += ".gz"
+		bufferName += ".gz"
 	}
 
-	buffer_path := filepath.Join(config.bufferPath, buffer_name)
+	bufferPath := filepath.Join(config.bufferPath, bufferName)
 
-	o.buffer = NewFileOutput(buffer_path, config)
+	o.buffer = NewFileOutput(bufferPath, config)
 	o.connect()
 
 	return o
@@ -74,6 +75,7 @@ func (o *S3Output) String() string {
 	return "S3 output: " + o.pathTemplate
 }
 
+// Close close the buffer of the S3 connection
 func (o *S3Output) Close() error {
 	return o.buffer.Close()
 }
@@ -121,7 +123,7 @@ func (o *S3Output) onBufferUpdate(path string) {
 
 	os.Remove(path)
 
-	if o.closeC != nil {
-		o.closeC <- struct{}{}
+	if o.closeCh != nil {
+		o.closeCh <- struct{}{}
 	}
 }

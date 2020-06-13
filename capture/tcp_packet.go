@@ -1,14 +1,11 @@
-package rawSocket
+package capture
 
 import (
 	"encoding/binary"
-	"log"
 	"strconv"
 	"strings"
 	"time"
 )
-
-var _ = log.Println
 
 // TCP Flags
 const (
@@ -102,7 +99,6 @@ func (t *TCPPacket) dump() *packet {
 	}
 
 	copy(packetData[16:], t.Data)
-
 	return &packet{
 		srcIP:     packetSrcIP,
 		data:      packetData,

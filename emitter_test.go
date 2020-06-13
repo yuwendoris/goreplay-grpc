@@ -127,7 +127,7 @@ func TestEmitterSplitRoundRobin(t *testing.T) {
 
 	close(quit)
 
-	if counter1 == 0 || counter2 == 0 {
+	if counter1 == 0 || counter2 == 0 || counter1 != counter2 {
 		t.Errorf("Round robin should split traffic equally: %d vs %d", counter1, counter2)
 	}
 

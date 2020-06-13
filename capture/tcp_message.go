@@ -1,4 +1,4 @@
-package rawSocket
+package capture
 
 import (
 	"bytes"
@@ -16,10 +16,13 @@ import (
 
 var _ = log.Println
 
+// TCPProtocol is a number to indicate type of protocol
 type TCPProtocol uint8
 
 const (
-	ProtocolHTTP   TCPProtocol = 0
+	// ProtocolHTTP ...
+	ProtocolHTTP TCPProtocol = 0
+	// ProtocolBinary ...
 	ProtocolBinary TCPProtocol = 1
 )
 

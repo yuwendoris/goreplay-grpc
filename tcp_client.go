@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// TCPClientConfig client configuration
 type TCPClientConfig struct {
 	Debug              bool
 	ConnectionTimeout  time.Duration
@@ -18,6 +19,7 @@ type TCPClientConfig struct {
 	Secure             bool
 }
 
+// TCPClient client connection properties
 type TCPClient struct {
 	baseURL        string
 	addr           string
@@ -27,6 +29,7 @@ type TCPClient struct {
 	redirectsCount int
 }
 
+// NewTCPClient returns new TCPClient
 func NewTCPClient(addr string, config *TCPClientConfig) *TCPClient {
 	if config.Timeout.Nanoseconds() == 0 {
 		config.Timeout = 5 * time.Second
@@ -44,6 +47,7 @@ func NewTCPClient(addr string, config *TCPClientConfig) *TCPClient {
 	return client
 }
 
+// Connect creates a tcp connection of the client
 func (c *TCPClient) Connect() (err error) {
 	c.Disconnect()
 
@@ -62,6 +66,7 @@ func (c *TCPClient) Connect() (err error) {
 	return
 }
 
+// Disconnect closes the client connection
 func (c *TCPClient) Disconnect() {
 	if c.conn != nil {
 		c.conn.Close()
@@ -92,6 +97,7 @@ func (c *TCPClient) isAlive() bool {
 	return true
 }
 
+// Send sends data over created tcp connection
 func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 	// Don't exit on panic
 	defer func() {

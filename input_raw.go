@@ -5,8 +5,8 @@ import (
 	"net"
 	"time"
 
+	raw "github.com/buger/goreplay/capture"
 	"github.com/buger/goreplay/proto"
-	raw "github.com/buger/goreplay/raw_socket_listener"
 )
 
 // RAWInput used for intercepting traffic for given address
@@ -59,7 +59,6 @@ func NewRAWInput(address string, engine int, trackResponse bool, expire time.Dur
 	}
 
 	i.listen(address)
-	i.listener.IsReady()
 
 	return
 }
@@ -89,7 +88,6 @@ func (i *RAWInput) listen(address string) {
 	Debug("Listening for traffic on: " + address)
 
 	host, port, err := net.SplitHostPort(address)
-
 	if err != nil {
 		log.Fatalf("input-raw: error while parsing address: %s", err)
 	}
@@ -103,13 +101,8 @@ func (i *RAWInput) listen(address string) {
 			select {
 			case <-i.quit:
 				return
-			default:
+			case i.data <- <-ch: // Receiving TCPMessage object
 			}
-
-			// Receiving TCPMessage object
-			m := <-ch
-
-			i.data <- m
 		}
 	}()
 }

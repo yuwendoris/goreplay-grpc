@@ -4,13 +4,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 func TestS3Output(t *testing.T) {
@@ -63,7 +64,7 @@ func TestS3OutputQueueLimit(t *testing.T) {
 	path := fmt.Sprintf("s3://test-gor/%d/requests.gz", rnd)
 
 	output := NewS3Output(path, &FileOutputConfig{queueLimit: 100})
-	output.closeC = make(chan struct{}, 3)
+	output.closeCh = make(chan struct{}, 3)
 
 	svc := s3.New(output.session)
 
@@ -77,7 +78,7 @@ func TestS3OutputQueueLimit(t *testing.T) {
 	output.Write([]byte("1 1 1\ntest"))
 
 	for i := 0; i < 3; i++ {
-		<-output.closeC
+		<-output.closeCh
 	}
 
 	params := &s3.ListObjectsInput{
@@ -110,7 +111,7 @@ func TestInputFileFromS3(t *testing.T) {
 	path := fmt.Sprintf("s3://test-gor-eu/%d/requests.gz", rnd)
 
 	output := NewS3Output(path, &FileOutputConfig{queueLimit: 5000})
-	output.closeC = make(chan struct{}, 10)
+	output.closeCh = make(chan struct{}, 10)
 
 	for i := 0; i <= 20000; i++ {
 		output.Write([]byte("1 1 1\ntest"))
@@ -123,7 +124,7 @@ func TestInputFileFromS3(t *testing.T) {
 	output.Write([]byte("1 1 1\ntest"))
 
 	for i := 0; i < 2; i++ {
-		<-output.closeC
+		<-output.closeCh
 	}
 
 	input := NewFileInput(fmt.Sprintf("s3://test-gor-eu/%d", rnd), false)

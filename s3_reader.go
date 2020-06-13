@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
+// S3ReadCloser ...
 type S3ReadCloser struct {
 	bucket    string
 	key       string
@@ -49,6 +50,7 @@ func awsConfig() *aws.Config {
 	return config
 }
 
+// NewS3ReadCloser returns new instance of S3 read closer
 func NewS3ReadCloser(path string) *S3ReadCloser {
 	if !PRO {
 		log.Fatal("Using S3 input and output require PRO license")
@@ -68,6 +70,7 @@ func NewS3ReadCloser(path string) *S3ReadCloser {
 	}
 }
 
+// Read reads buffer from s3 session
 func (s *S3ReadCloser) Read(b []byte) (n int, e error) {
 	if s.readBytes == 0 || s.readBytes+len(b) > s.offset {
 		svc := s3.New(s.sess)
@@ -96,6 +99,7 @@ func (s *S3ReadCloser) Read(b []byte) (n int, e error) {
 	return s.buf.Read(b)
 }
 
+// Close is here to make S3ReadCloser satisfy ReadCloser interface
 func (s *S3ReadCloser) Close() error {
 	return nil
 }
