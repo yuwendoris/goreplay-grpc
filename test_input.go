@@ -3,41 +3,51 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
+	"errors"
 	"time"
 )
+
+// ErrorStopped is the error returned when the go routines reading the input is stopped.
+var ErrorStopped = errors.New("reading stopped")
 
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
 	data       chan []byte
 	skipHeader bool
+	stop       chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewTestInput constructor for TestInput
 func NewTestInput() (i *TestInput) {
 	i = new(TestInput)
 	i.data = make(chan []byte, 100)
-
+	i.stop = make(chan bool)
 	return
 }
 
 func (i *TestInput) Read(data []byte) (int, error) {
+	var buf []byte
 	select {
-	case buf := <-i.data:
-		var header []byte
-
-		if !i.skipHeader {
-			header = payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
-			copy(data[0:len(header)], header)
-			copy(data[len(header):], buf)
-		} else {
-			copy(data, buf)
-		}
-
-		return len(buf) + len(header), nil
-	case <-time.After(10* time.Second):
-		return 0, fmt.Errorf("timed out waiting for read")
+	case <-i.stop:
+		return 0, ErrorStopped
+	case buf = <-i.data:
 	}
+
+	var header []byte
+	if !i.skipHeader {
+		header = payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
+		copy(data[0:len(header)], header)
+		copy(data[len(header):], buf)
+	} else {
+		copy(data, buf)
+	}
+
+	return len(buf) + len(header), nil
+}
+
+func (i *TestInput) Close() error {
+	close(i.stop)
+	return nil
 }
 
 func (i *TestInput) EmitBytes(data []byte) {

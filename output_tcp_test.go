@@ -24,8 +24,10 @@ func TestTCPOutput(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -33,8 +35,7 @@ func TestTCPOutput(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func startTCP(cb func([]byte)) net.Listener {
@@ -78,8 +79,10 @@ func BenchmarkTCPOutput(b *testing.B) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -88,8 +91,7 @@ func BenchmarkTCPOutput(b *testing.B) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func TestStickyDisable(t *testing.T) {

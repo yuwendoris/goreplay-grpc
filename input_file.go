@@ -113,7 +113,7 @@ type FileInput struct {
 func NewFileInput(path string, loop bool) (i *FileInput) {
 	i = new(FileInput)
 	i.data = make(chan []byte, 1000)
-	i.exit = make(chan bool, 1)
+	i.exit = make(chan bool)
 	i.path = path
 	i.speedFactor = 1
 	i.loop = loop
@@ -153,9 +153,13 @@ func (i *FileInput) init() (err error) {
 }
 
 func (i *FileInput) Read(data []byte) (int, error) {
-	buf := <-i.data
+	var buf []byte
+	select {
+	case <-i.exit:
+		return 0, ErrorStopped
+	case buf = <-i.data:
+	}
 	copy(data, buf)
-
 	return len(buf), nil
 }
 
@@ -214,7 +218,13 @@ func (i *FileInput) emit() {
 			lastTime = reader.timestamp
 		}
 
-		i.data <- reader.ReadPayload()
+		// Recheck if we have exited since last check.
+		select {
+		case <-i.exit:
+			return
+		default:
+			i.data <- reader.ReadPayload()
+		}
 	}
 
 	log.Printf("FileInput: end of file '%s'\n", i.path)
@@ -231,8 +241,7 @@ func (i *FileInput) Close() error {
 	defer i.mu.Unlock()
 	i.mu.Lock()
 
-	i.exit <- true
-
+	close(i.exit)
 	for _, r := range i.readers {
 		r.Close()
 	}

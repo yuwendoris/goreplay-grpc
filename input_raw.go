@@ -14,7 +14,7 @@ type RAWInput struct {
 	data          chan *raw.TCPMessage
 	address       string
 	expire        time.Duration
-	quit          chan bool
+	quit          chan bool // Channel used only to indicate goroutine should shutdown
 	engine        int
 	realIPHeader  []byte
 	trackResponse bool
@@ -50,7 +50,13 @@ func NewRAWInput(address string, engine int, trackResponse bool, expire time.Dur
 }
 
 func (i *RAWInput) Read(data []byte) (int, error) {
-	msg := <-i.data
+	var msg *raw.TCPMessage
+	select {
+	case <-i.quit:
+		return 0, ErrorStopped
+	case msg = <-i.data:
+	}
+
 	buf := msg.Bytes()
 
 	var header []byte

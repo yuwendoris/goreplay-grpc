@@ -25,8 +25,10 @@ func TestHTTPInput(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	address := strings.Replace(input.listener.Addr().String(), "[::]", "127.0.0.1", -1)
 
@@ -36,8 +38,7 @@ func TestHTTPInput(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func TestInputHTTPLargePayload(t *testing.T) {
@@ -61,8 +62,10 @@ func TestInputHTTPLargePayload(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	wg.Add(1)
 	address := strings.Replace(input.listener.Addr().String(), "[::]", "127.0.0.1", -1)
@@ -73,5 +76,5 @@ func TestInputHTTPLargePayload(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }

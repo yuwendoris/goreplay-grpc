@@ -77,7 +77,6 @@ func (l *Limiter) Write(data []byte) (n int, err error) {
 	}
 
 	n, err = l.plugin.(io.Writer).Write(data)
-
 	return
 }
 
@@ -97,4 +96,12 @@ func (l *Limiter) Read(data []byte) (n int, err error) {
 
 func (l *Limiter) String() string {
 	return fmt.Sprintf("Limiting %s to: %d (isPercent: %v)", l.plugin, l.limit, l.isPercent)
+}
+
+// Close closes the resources.
+func (l *Limiter) Close() error {
+	if fi, ok := l.plugin.(io.ReadCloser); ok {
+		fi.Close()
+	}
+	return nil
 }
