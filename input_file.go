@@ -14,14 +14,19 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 type fileInputReader struct {
 	reader    *bufio.Reader
 	data      []byte
-	file      *os.File
+	file      io.ReadCloser
 	timestamp int64
 	closed    int32 // Value of 0 indicates that the file is still open.
+	s3        bool
 }
 
 func (f *fileInputReader) parseNext() error {
@@ -74,7 +79,14 @@ func (f *fileInputReader) Close() error {
 }
 
 func NewFileInputReader(path string) *fileInputReader {
-	file, err := os.Open(path)
+	var file io.ReadCloser
+	var err error
+
+	if strings.HasPrefix(path, "s3://") {
+		file = NewS3ReadCloser(path)
+	} else {
+		file, err = os.Open(path)
+	}
 
 	if err != nil {
 		log.Println(err)
@@ -133,9 +145,31 @@ func (i *FileInput) init() (err error) {
 
 	var matches []string
 
-	if matches, err = filepath.Glob(i.path); err != nil {
-		log.Println("Wrong file pattern", i.path, err)
-		return
+	if strings.HasPrefix(i.path, "s3://") {
+		sess := session.Must(session.NewSession(awsConfig()))
+		svc := s3.New(sess)
+
+		bucket, key := parseS3Url(i.path)
+
+		params := &s3.ListObjectsInput{
+			Bucket: aws.String(bucket),
+			Prefix: aws.String(key),
+		}
+
+		resp, err := svc.ListObjects(params)
+		if err != nil {
+			log.Println("Error while retreiving list of files from S3", i.path, err)
+			return err
+		}
+
+		for _, c := range resp.Contents {
+			matches = append(matches, "s3://"+bucket+"/"+(*c.Key))
+		}
+	} else {
+		if matches, err = filepath.Glob(i.path); err != nil {
+			log.Println("Wrong file pattern", i.path, err)
+			return
+		}
 	}
 
 	if len(matches) == 0 {

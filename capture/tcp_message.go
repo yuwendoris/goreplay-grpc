@@ -5,12 +5,25 @@ import (
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
+	"log"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/buger/goreplay/proto"
+)
+
+var _ = log.Println
+
+// TCPProtocol is a number to indicate type of protocol
+type TCPProtocol uint8
+
+const (
+	// ProtocolHTTP ...
+	ProtocolHTTP TCPProtocol = 0
+	// ProtocolBinary ...
+	ProtocolBinary TCPProtocol = 1
 )
 
 // TCPMessage ensure that all TCP packets for given request is received, and processed in right sequence
@@ -36,6 +49,8 @@ type TCPMessage struct {
 
 	delChan chan *TCPMessage
 
+	protocol TCPProtocol
+
 	/* HTTP specific variables */
 	methodType    httpMethodType
 	bodyType      httpBodyType
@@ -46,10 +61,10 @@ type TCPMessage struct {
 	complete      bool
 }
 
-// NewTCPMessage pointer created from a sequence and acknowledgment numbers, whether the message is incoming and a timestamp
-// that indicates when the packet was captrued.
-func NewTCPMessage(Seq, Ack uint32, IsIncoming bool, timestamp time.Time) (msg *TCPMessage) {
-	msg = &TCPMessage{Seq: Seq, Ack: Ack, IsIncoming: IsIncoming, Start: timestamp}
+// NewTCPMessage pointer created from a Acknowledgment number and a channel of messages readuy to be deleted
+func NewTCPMessage(Seq, Ack uint32, IsIncoming bool, protocol TCPProtocol, timestamp time.Time) (msg *TCPMessage) {
+	msg = &TCPMessage{Seq: Seq, Ack: Ack, IsIncoming: IsIncoming, protocol: protocol, Start: timestamp}
+	msg.Start = time.Now()
 
 	return
 }
@@ -103,30 +118,26 @@ func (t *TCPMessage) Size() (size int) {
 // AddPacket to the message and ensure packet uniqueness
 // TCP allows that packet can be re-send multiple times
 func (t *TCPMessage) AddPacket(packet *TCPPacket) {
-	packetFound := false
-
 	for _, pkt := range t.packets {
 		if packet.Seq == pkt.Seq {
-			packetFound = true
-			break
+			return
 		}
 	}
 
-	if !packetFound {
-		// Packets not always captured in same Seq order, and sometimes we need to prepend
-		if len(t.packets) == 0 || packet.Seq > t.packets[len(t.packets)-1].Seq {
-			t.packets = append(t.packets, packet)
-		} else if packet.Seq < t.packets[0].Seq {
-			t.packets = append([]*TCPPacket{packet}, t.packets...)
-			t.Seq = packet.Seq // Message Seq should indicated starting seq
-		} else { // insert somewhere in the middle...
-			for i, p := range t.packets {
-				if packet.Seq < p.Seq {
-					t.packets = append(t.packets[:i], append([]*TCPPacket{packet}, t.packets[i:]...)...)
-					break
-				}
+	// Packets not always captured in same Seq order, and sometimes we need to prepend
+	if len(t.packets) == 0 || packet.Seq > t.packets[len(t.packets)-1].Seq {
+		t.packets = append(t.packets, packet)
+	} else if packet.Seq < t.packets[0].Seq {
+		t.packets = append([]*TCPPacket{packet}, t.packets...)
+		t.Seq = packet.Seq // Message Seq should indicated starting seq
+	} else { // insert somewhere in the middle...
+		for i, p := range t.packets {
+			if packet.Seq < p.Seq {
+				t.packets = append(t.packets[:i], append([]*TCPPacket{packet}, t.packets[i:]...)...)
+				break
 			}
 		}
+
 		if packet.OrigAck != 0 {
 			t.DataAck = packet.OrigAck
 		}
@@ -141,11 +152,14 @@ func (t *TCPMessage) AddPacket(packet *TCPPacket) {
 	}
 
 	t.checkSeqIntegrity()
-	t.updateHeadersPacket()
-	t.updateMethodType()
-	t.updateBodyType()
-	t.checkIfComplete()
-	t.check100Continue()
+
+	if t.protocol == ProtocolHTTP {
+		t.updateHeadersPacket()
+		t.updateMethodType()
+		t.updateBodyType()
+		t.check100Continue()
+		t.checkIfComplete()
+	}
 }
 
 // Check if there is missing packet
@@ -179,7 +193,7 @@ func (t *TCPMessage) checkSeqIntegrity() {
 		nextSeq := p.Seq + uint32(len(p.Data))
 
 		if np.Seq != nextSeq {
-			if t.expectType == httpExpect100Continue {
+			if t.protocol == ProtocolHTTP && t.expectType == httpExpect100Continue {
 				if np.Seq != nextSeq+22 {
 					t.seqMissing = true
 					return

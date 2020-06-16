@@ -6,6 +6,7 @@ require (
 	github.com/Shopify/sarama v1.11.0
 	github.com/Shopify/toxiproxy v2.1.4+incompatible // indirect
 	github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61 // indirect
+	github.com/aws/aws-sdk-go v1.19.28
 	github.com/bitly/go-hostpool v0.0.0-20171023180738-a3a6125de932 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect
 	github.com/eapache/go-resiliency v0.0.0-20160104191539-b86b1ec0dd42 // indirect

@@ -34,8 +34,10 @@ type FileOutputConfig struct {
 	flushInterval     time.Duration
 	sizeLimit         int64
 	outputFileMaxSize int64
-	queueLimit        int
+	queueLimit        int64
 	append            bool
+	bufferPath        string
+	onClose           func(string)
 }
 
 // FileOutput output plugin
@@ -44,7 +46,7 @@ type FileOutput struct {
 	pathTemplate   string
 	currentName    string
 	file           *os.File
-	queueLength    int
+	queueLength    int64
 	chunkSize      int
 	writer         io.Writer
 	requestPerFile bool
@@ -65,6 +67,10 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 
 	if strings.Contains(pathTemplate, "%r") {
 		o.requestPerFile = true
+	}
+
+	if config.flushInterval == 0 {
+		config.flushInterval = 100 * time.Millisecond
 	}
 
 	go func() {
@@ -270,6 +276,10 @@ func (o *FileOutput) closeLocked() error {
 			o.writer.(*bufio.Writer).Flush()
 		}
 		o.file.Close()
+
+		if o.config.onClose != nil {
+			o.config.onClose(o.file.Name())
+		}
 	}
 
 	o.closed = true

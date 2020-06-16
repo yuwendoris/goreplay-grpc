@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/buger/goreplay/proto"
-
 	"github.com/Shopify/sarama"
+	"github.com/buger/goreplay/proto"
 )
 
 // KafkaConfig should contains required information to

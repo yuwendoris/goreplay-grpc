@@ -118,7 +118,7 @@ func (m *Middleware) read(from io.Reader) {
 
 		buf := make([]byte, len(line)/2)
 		if _, err := hex.Decode(buf, line[:len(line)-1]); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to decode input payload", err, len(line))
+			fmt.Fprintln(os.Stderr, "Failed to decode input payload", err, len(line), string(line[:len(line)-1]))
 		}
 
 		if Settings.debug {

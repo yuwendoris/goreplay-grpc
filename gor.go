@@ -113,6 +113,8 @@ func finalize(plugins *InOutPlugins) {
 			cp.Close()
 		}
 	}
+
+	time.Sleep(100 * time.Millisecond)
 }
 
 func profileCPU(cpuprofile string) {

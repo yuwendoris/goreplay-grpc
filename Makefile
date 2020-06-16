@@ -2,12 +2,14 @@ SOURCE = $(shell ls -1 *.go | grep -v _test.go)
 SOURCE_PATH = /go/src/github.com/buger/goreplay/
 PORT = 8000
 FADDR = :8000
-RUN = docker run -v `pwd`:$(SOURCE_PATH) -p 0.0.0.0:$(PORT):$(PORT) -i -t gor
+CONTAINER=gor
+PREFIX=
+RUN = docker run -v `pwd`:$(SOURCE_PATH) -e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) -e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) -p 0.0.0.0:$(PORT):$(PORT) -t -i $(CONTAINER)
 BENCHMARK = BenchmarkRAWInput
 TEST = TestRawListenerBench
 VERSION = DEV-$(shell date +%s)
-LDFLAGS = -ldflags "-X main.VERSION=$(VERSION) -extldflags \"-static\""
-MAC_LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)"
+LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)$(PREFIX) -extldflags \"-static\" -X main.DEMO=$(DEMO)"
+MAC_LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)$(PREFIX) -X main.DEMO=$(DEMO)"
 FADDR = ":8000"
 
 release: release-x64 release-mac
@@ -16,20 +18,19 @@ release-bin:
 	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -o gor -tags netgo $(LDFLAGS)
 
 release-x64:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x64.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)$(PREFIX)_x64.tar.gz gor && rm gor
 
 release-x86:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i gor go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)_x86.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)$(PREFIX)_x86.tar.gz gor && rm gor
 
 release-mac:
-	go build $(MAC_LDFLAGS) -o gor && tar -czf gor_$(VERSION)_mac.tar.gz gor && rm gor
+	go build -o gor $(MAC_LDFLAGS) && tar -czf gor_$(VERSION)$(PREFIX)_mac.tar.gz gor && rm gor
 
 install:
 	go install $(MAC_LDFLAGS)
 
 build:
-	docker build -t gor -f Dockerfile.dev .
-
+	docker build -t $(CONTAINER) -f Dockerfile.dev .
 
 profile:
 	go build && ./gor --output-http="http://localhost:9000" --input-dummy 0 --input-raw :9000 --input-http :9000 --memprofile=./mem.out --cpuprofile=./cpu.out --stats --output-http-stats --output-http-timeout 100ms
@@ -41,13 +42,13 @@ race:
 	$(RUN) go test ./... $(ARGS) -v -race -timeout 15s
 
 test:
-	$(RUN) go test ./. -timeout 60s $(LDFLAGS) $(ARGS)  -v
+	$(RUN) go test ./. -timeout 120s $(LDFLAGS) $(ARGS)  -v
 
 test_all:
-	$(RUN) go test ./... -timeout 60s $(LDFLAGS) $(ARGS) -v
+	$(RUN) go test ./... -timeout 120s $(LDFLAGS) $(ARGS) -v
 
 testone:
-	$(RUN) go test ./... -timeout 4s $(LDFLAGS) -run $(TEST) $(ARGS) -v
+	$(RUN) go test ./. -timeout 60s $(LDFLAGS) -run $(TEST) $(ARGS) -v
 
 cover:
 	$(RUN) go test $(ARGS) -race -v -timeout 15s -coverprofile=coverage.out

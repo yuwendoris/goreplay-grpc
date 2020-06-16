@@ -76,6 +76,8 @@ type Listener struct {
 
 	quit  chan bool
 	ready bool
+
+	protocol TCPProtocol
 }
 
 type request struct {
@@ -92,7 +94,7 @@ const (
 )
 
 // NewListener creates and initializes new Listener object
-func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, bpfFilter string, timestampType string, bufferSize int64, overrideSnapLen bool, immediateMode bool) (l *Listener) {
+func NewListener(addr string, port string, engine int, trackResponse bool, expire time.Duration, protocol TCPProtocol, bpfFilter string, timestampType string, bufferSize int64, overrideSnapLen bool, immediateMode bool) (l *Listener) {
 	l = &Listener{}
 
 	l.packetsChan = make(chan *packet, 10000)
@@ -105,6 +107,7 @@ func NewListener(addr string, port string, engine int, trackResponse bool, expir
 	l.respAliases = make(map[uint32]*TCPMessage)
 	l.respWithoutReq = make(map[uint32]tcpID)
 	l.trackResponse = trackResponse
+	l.protocol = protocol
 	l.bpfFilter = bpfFilter
 	l.timestampType = timestampType
 	l.immediateMode = immediateMode
@@ -187,7 +190,7 @@ func (t *Listener) dispatchMessage(message *TCPMessage) {
 
 	t.deleteMessage(message)
 
-	if !message.complete {
+	if t.protocol == ProtocolHTTP && !message.complete {
 		if !message.IsIncoming {
 			delete(t.respAliases, message.Ack)
 			delete(t.respWithoutReq, message.Ack)
@@ -737,39 +740,40 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 
 	isIncoming := packet.DestPort == t.port
 
-	if !isIncoming {
-		responseRequest, _ = t.respAliases[packet.Ack]
-	}
-
-	// Seek for 100-expect chunks
-	// `packet.Ack != parentAck` is protection for clients who send data without ignoring server 100-continue response, e.g have data chunks have same Ack
-	if parentAck, ok := t.seqWithData[packet.Seq]; ok && packet.Ack != parentAck {
-		// Skip zero-length chunks https://github.com/buger/goreplay/issues/496
-		if len(packet.Data) == 0 {
-			return
+	if t.protocol == ProtocolHTTP {
+		if !isIncoming {
+			responseRequest, _ = t.respAliases[packet.Ack]
 		}
 
-		// In case if non-first data chunks comes first
-		for _, m := range t.messages {
-			if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
-				t.deleteMessage(m)
+		// Seek for 100-expect chunks
+		// `packet.Ack != parentAck` is protection for clients who send data without ignoring server 100-continue response, e.g have data chunks have same Ack
+		if parentAck, ok := t.seqWithData[packet.Seq]; ok && packet.Ack != parentAck {
+			// Skip zero-length chunks https://github.com/buger/goreplay/issues/496
+			if len(packet.Data) == 0 {
+				return
+			}
 
-				if m.AssocMessage != nil {
-					m.AssocMessage.setAssocMessage(nil)
-					m.setAssocMessage(nil)
-				}
+			// In case if non-first data chunks comes first
+			for _, m := range t.messages {
+				if m.Ack == packet.Ack && bytes.Equal(m.packets[0].Addr, packet.Addr) {
+					t.deleteMessage(m)
 
-				for _, pkt := range m.packets {
-					// log.Println("Updating ack", parentAck, pkt.Ack)
-					pkt.UpdateAck(parentAck)
-					// Re-queue this packets
-					t.processTCPPacket(pkt)
+					if m.AssocMessage != nil {
+						m.AssocMessage.setAssocMessage(nil)
+						m.setAssocMessage(nil)
+					}
+					for _, pkt := range m.packets {
+						// log.Println("Updating ack", parentAck, pkt.Ack)
+						pkt.UpdateAck(parentAck)
+						// Re-queue this packets
+						t.processTCPPacket(pkt)
+					}
 				}
 			}
-		}
 
-		t.ackAliases[packet.Ack] = parentAck
-		packet.UpdateAck(parentAck)
+			t.ackAliases[packet.Ack] = parentAck
+			packet.UpdateAck(parentAck)
+		}
 	}
 
 	if isIncoming && packet.IsFIN {
@@ -787,7 +791,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message, ok := t.messages[packet.ID]
 
 	if !ok {
-		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, packet.timestamp)
+		message = NewTCPMessage(packet.Seq, packet.Ack, isIncoming, t.protocol, packet.timestamp)
 		t.messages[packet.ID] = message
 
 		if !isIncoming {
@@ -804,7 +808,7 @@ func (t *Listener) processTCPPacket(packet *TCPPacket) {
 	message.AddPacket(packet)
 
 	// Handling Expect: 100-continue requests
-	if message.expectType == httpExpect100Continue && len(message.packets) == message.headerPacket+1 {
+	if t.protocol == ProtocolHTTP && message.expectType == httpExpect100Continue && len(message.packets) == message.headerPacket+1 {
 		seq := packet.Seq + uint32(len(packet.Data))
 		t.seqWithData[seq] = packet.Ack
 
