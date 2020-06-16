@@ -110,6 +110,8 @@ type HTTPOutput struct {
 	queueStats *GorStat
 
 	elasticSearch *ESPlugin
+
+	stop chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewHTTPOutput constructor for HTTPOutput
@@ -119,6 +121,7 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 
 	o.address = address
 	o.config = config
+	o.stop = make(chan bool)
 
 	if o.config.stats {
 		o.queueStats = NewGorStat("output_http", o.config.statsMs)
@@ -207,6 +210,8 @@ func (o *HTTPOutput) startWorker() {
 
 	for {
 		select {
+		case <-o.stop:
+			return
 		case data := <-o.queue:
 			o.sendRequest(client, data)
 		case <-time.After(2 * time.Second):
@@ -234,7 +239,11 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 	buf := make([]byte, len(data))
 	copy(buf, data)
 
-	o.queue <- buf
+	select {
+	case <-o.stop:
+		return 0, ErrorStopped
+	case o.queue <- buf:
+	}
 
 	if o.config.stats {
 		o.queueStats.Write(len(o.queue))
@@ -259,7 +268,12 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 }
 
 func (o *HTTPOutput) Read(data []byte) (int, error) {
-	resp := <-o.responses
+	var resp response
+	select {
+	case <-o.stop:
+		return 0, ErrorStopped
+	case resp = <-o.responses:
+	}
 
 	if Settings.debug {
 		Debug("[OUTPUT-HTTP] Received response:", string(resp.payload))
@@ -309,4 +323,10 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 
 func (o *HTTPOutput) String() string {
 	return "HTTP output: " + o.address
+}
+
+// Close closes the data channel so that data
+func (o *HTTPOutput) Close() error {
+	close(o.stop)
+	return nil
 }

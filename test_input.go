@@ -3,21 +3,26 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 )
+
+// ErrorStopped is the error returned when the go routines reading the input is stopped.
+var ErrorStopped = errors.New("reading stopped")
 
 // TestInput used for testing purpose, it allows emitting requests on demand
 type TestInput struct {
 	data       chan []byte
 	skipHeader bool
+	stop       chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewTestInput constructor for TestInput
 func NewTestInput() (i *TestInput) {
 	i = new(TestInput)
 	i.data = make(chan []byte, 100)
-
+	i.stop = make(chan bool)
 	return
 }
 
@@ -38,6 +43,11 @@ func (i *TestInput) Read(data []byte) (int, error) {
 	case <-time.After(10 * time.Second):
 		return 0, fmt.Errorf("timed out waiting for read")
 	}
+}
+
+func (i *TestInput) Close() error {
+	close(i.stop)
+	return nil
 }
 
 func (i *TestInput) EmitBytes(data []byte) {

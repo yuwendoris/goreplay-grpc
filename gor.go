@@ -86,6 +86,7 @@ func main() {
 		}()
 	}
 
+	emitter := NewEmitter(closeCh)
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -103,7 +104,7 @@ func main() {
 		})
 	}
 
-	Start(plugins, closeCh)
+	emitter.Start(plugins, Settings.middleware)
 }
 
 func finalize(plugins *InOutPlugins) {

@@ -36,7 +36,7 @@ func buildMessage(p *TCPPacket) *TCPMessage {
 	if p.SrcPort == 1 {
 		isIncoming = true
 	}
-	m := NewTCPMessage(p.Seq, p.Ack, isIncoming, ProtocolHTTP, "")
+	m := NewTCPMessage(p.Seq, p.Ack, isIncoming, ProtocolHTTP, p.timestamp)
 	m.AddPacket(p)
 
 	return m

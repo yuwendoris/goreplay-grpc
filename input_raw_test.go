@@ -69,10 +69,12 @@ func TestRAWInputIPv4(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
 	client := NewHTTPClient("http://"+listener.Addr().String(), &HTTPClientConfig{})
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		// request + response
@@ -82,8 +84,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func TestRAWInputNoKeepAlive(t *testing.T) {
@@ -119,10 +120,12 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
 	client := NewHTTPClient("http://"+listener.Addr().String(), &HTTPClientConfig{})
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		// request + response
@@ -132,8 +135,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func TestRAWInputIPv6(t *testing.T) {
@@ -177,10 +179,12 @@ func TestRAWInputIPv6(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
 	client := NewHTTPClient("http://"+listener.Addr().String(), &HTTPClientConfig{})
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 100; i++ {
 		// request + response
@@ -190,7 +194,7 @@ func TestRAWInputIPv6(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }
 
 func TestInputRAW100Expect(t *testing.T) {
@@ -244,8 +248,10 @@ func TestInputRAW100Expect(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{testOutput, httpOutput},
 	}
+	plugins.All = append(plugins.All, input, testOutput, httpOutput)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	// Origin + Response/Request Test Output + Request Http Output
 	wg.Add(4)
@@ -256,7 +262,7 @@ func TestInputRAW100Expect(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }
 
 func TestInputRAWChunkedEncoding(t *testing.T) {
@@ -296,9 +302,10 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{httpOutput},
 	}
+	plugins.All = append(plugins.All, input, httpOutput)
 
-	go Start(plugins, quit)
-
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 	wg.Add(2)
 
 	curl := exec.Command("curl", "http://"+originAddr, "--header", "Transfer-Encoding: chunked", "--header", "Expect:", "--data-binary", "@README.md")
@@ -308,8 +315,7 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }
 
 func TestInputRAWLargePayload(t *testing.T) {
@@ -364,8 +370,10 @@ func TestInputRAWLargePayload(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{httpOutput},
 	}
+	plugins.All = append(plugins.All, input, httpOutput)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	wg.Add(2)
 	curl := exec.Command("curl", "http://"+originAddr, "--header", "Transfer-Encoding: chunked", "--header", "Expect:", "--data-binary", "@/tmp/large")
@@ -375,7 +383,7 @@ func TestInputRAWLargePayload(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }
 
 func BenchmarkRAWInput(b *testing.B) {
@@ -410,8 +418,10 @@ func BenchmarkRAWInput(b *testing.B) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output, httpOutput},
 	}
+	plugins.All = append(plugins.All, input, output, httpOutput)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	emitted := 0
 	fileContent, _ := ioutil.ReadFile("LICENSE.txt")
@@ -442,5 +452,5 @@ func BenchmarkRAWInput(b *testing.B) {
 	time.Sleep(400 * time.Millisecond)
 	log.Println("Emitted ", emitted, ", Captured ", reqCounter, "requests and ", respCounter, " responses", "and replayed", replayCounter)
 
-	close(quit)
+	emitter.Close()
 }

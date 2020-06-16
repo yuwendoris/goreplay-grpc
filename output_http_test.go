@@ -53,8 +53,10 @@ func TestHTTPOutput(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{http_output, output},
 	}
+	plugins.All = append(plugins.All, input, output, http_output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < 10; i++ {
 		// 2 http-output, 2 - test output request, 2 - test output http response
@@ -100,16 +102,16 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	wg.Add(1)
 	input.EmitGET()
 
 	wg.Wait()
-
-	close(quit)
-
+	emitter.Close()
 	Settings.modifierConfig = HTTPModifierConfig{}
 }
 
@@ -129,8 +131,10 @@ func TestHTTPOutputSSL(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	wg.Add(2)
 
@@ -138,7 +142,7 @@ func TestHTTPOutputSSL(t *testing.T) {
 	input.EmitGET()
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 }
 
 func TestHTTPOutputSessions(t *testing.T) {
@@ -160,7 +164,8 @@ func TestHTTPOutputSessions(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	uuid1 := []byte("1234567890123456789a0000")
 	uuid2 := []byte("1234567890123456789d0000")
@@ -183,7 +188,7 @@ func TestHTTPOutputSessions(t *testing.T) {
 		t.Error("Should have only 2 workers", output.(*HTTPOutput).activeWorkers)
 	}
 
-	close(quit)
+	emitter.Close()
 
 	Settings.recognizeTCPSessions = false
 }
@@ -205,8 +210,10 @@ func BenchmarkHTTPOutput(b *testing.B) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	for i := 0; i < b.N; i++ {
 		wg.Add(1)
@@ -214,6 +221,5 @@ func BenchmarkHTTPOutput(b *testing.B) {
 	}
 
 	wg.Wait()
-
-	close(quit)
+	emitter.Close()
 }

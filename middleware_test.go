@@ -128,9 +128,11 @@ func TestEchoMiddleware(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
 	// Start Gor
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	// Wait till middleware initialization
 	time.Sleep(100 * time.Millisecond)
@@ -148,7 +150,7 @@ func TestEchoMiddleware(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 	time.Sleep(200 * time.Millisecond)
 
 	Settings.middleware = ""
@@ -192,9 +194,11 @@ func TestTokenMiddleware(t *testing.T) {
 		Inputs:  []io.Reader{input},
 		Outputs: []io.Writer{output},
 	}
+	plugins.All = append(plugins.All, input, output)
 
 	// Start Gor
-	go Start(plugins, quit)
+	emitter := NewEmitter(quit)
+	go emitter.Start(plugins, Settings.middleware)
 
 	// Wait for middleware to initialize
 	// Give go compiller time to build programm
@@ -219,7 +223,7 @@ func TestTokenMiddleware(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
+	emitter.Close()
 	time.Sleep(100 * time.Millisecond)
 	Settings.middleware = ""
 }
