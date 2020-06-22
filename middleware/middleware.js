@@ -335,7 +335,12 @@ function deleteHttpHeader(payload, name) {
 }
 
 function httpBody(payload) {
-    return payload.slice(payload.indexOf("\r\n\r\n") + 4, payload.length);
+    let bodyIndex = payload.indexOf("\r\n\r\n");
+    if (-1 != bodyIndex){
+        return payload.slice(bodyIndex + 4, payload.length);   
+    } else {
+        return null;
+    }
 }
 
 function setHttpBody(payload, newBody) {
@@ -709,6 +714,12 @@ function TEST_httpBody() {
     let body = httpBody(Buffer.from(examplePayload));
     if (body != "hello") {
         fail(`'${body}' != 'hello'`)
+    }
+
+    const exampleInvalidPayload = "Invalid HTTP Response by Network issue";
+    let invalidBody = httpBody(Buffer.from(exampleInvalidPayload));
+    if (invalidBody != null) {
+        fail(`'${invalidBody}' != 'null'`)
     }
 }
 
