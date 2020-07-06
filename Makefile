@@ -12,19 +12,45 @@ LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)$(PREFIX) -extldflags \"-static\" 
 MAC_LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)$(PREFIX) -X main.DEMO=$(DEMO)"
 FADDR = ":8000"
 
+FPMCOMMON= \
+    --name goreplay \
+    --description "GoReplay is an open-source network monitoring tool which can record your live traffic, and use it for shadowing, load testing, monitoring and detailed analysis." \
+    -v $(VERSION) \
+    --vendor "Leonid Bugaev" \
+    -m "<support@goreplay.org>" \
+    --url "https://goreplay.org" \
+    -s dir \
+    -C /tmp/gor-build \
+
 release: release-x64 release-mac
 
 release-bin:
 	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i gor go build -o gor -tags netgo $(LDFLAGS)
 
 release-x64:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)$(PREFIX)_x64.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS)
+	tar -czf gor_$(VERSION)$(PREFIX)_x64.tar.gz gor
+	mkdir -p /tmp/gor-build
+	mv ./gor /tmp/gor-build/gor
+	cd /tmp/gor-build
+	fpm $(FPMCOMMON) -a amd64 -t deb ./=/usr/local/bin
+	fpm $(FPMCOMMON) -a amd64 -t rpm ./=/usr/local/bin
+	rm -rf /tmp/gor-build
 
 release-x86:
-	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS) && tar -czf gor_$(VERSION)$(PREFIX)_x86.tar.gz gor && rm gor
+	docker run -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i $(CONTAINER) go build -o gor -tags netgo $(LDFLAGS)
+	tar -czf gor_$(VERSION)$(PREFIX)_x86.tar.gz gor
+	rm gor
 
 release-mac:
-	go build -o gor $(MAC_LDFLAGS) && tar -czf gor_$(VERSION)$(PREFIX)_mac.tar.gz gor && rm gor
+	go build -o gor $(MAC_LDFLAGS)
+	tar -czf gor_$(VERSION)$(PREFIX)_mac.tar.gz gor
+	mkdir -p /tmp/gor-build
+	mv ./gor /tmp/gor-build/gor
+	cd /tmp/gor-build
+	fpm $(FPMCOMMON) -a amd64 -t osxpkg ./=/usr/local/bin
+	rm -rf /tmp/gor-build
+
 
 install:
 	go install $(MAC_LDFLAGS)

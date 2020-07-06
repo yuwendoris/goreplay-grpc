@@ -1,5 +1,8 @@
 *.swp
 *.gor
+*.rpm
+*.dep
+*.pkg
 
 *.out
 
