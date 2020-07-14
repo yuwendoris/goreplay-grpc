@@ -271,13 +271,22 @@ func TestSetPath(t *testing.T) {
 func TestPathParam(t *testing.T) {
 	var payload []byte
 
-	payload = []byte("POST /post?param=test&user_id=1 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
+	payload = []byte("POST /post?param=test&user_id=1&d_type=1&type=2&d_type=3 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
 
 	if val, _, _ := PathParam(payload, []byte("param")); !bytes.Equal(val, []byte("test")) {
 		t.Error("Should detect attribute", string(val))
 	}
 
 	if val, _, _ := PathParam(payload, []byte("user_id")); !bytes.Equal(val, []byte("1")) {
+		t.Error("Should detect attribute", string(val))
+	}
+
+	if val, _, _ := PathParam(payload, []byte("type")); !bytes.Equal(val, []byte("2")) {
+		t.Error("Should detect attribute", string(val))
+	}
+
+	if val, _, _ := PathParam(payload, []byte("d_type")); !bytes.Equal(val, []byte("1")) {
+		// this function is not designed for cases with duplicate param keys
 		t.Error("Should detect attribute", string(val))
 	}
 }

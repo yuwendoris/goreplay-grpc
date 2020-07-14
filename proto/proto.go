@@ -323,21 +323,23 @@ func SetPath(payload, path []byte) []byte {
 func PathParam(payload, name []byte) (value []byte, valueStart, valueEnd int) {
 	path := Path(payload)
 
-	if paramStart := bytes.Index(path, append(name, '=')); paramStart != -1 {
-		valueStart := paramStart + len(name) + 1
-		paramEnd := bytes.IndexByte(path[valueStart:], '&')
-
-		// Param can end with '&' (another param), or end of line
-		if paramEnd == -1 { // It is final param
-			paramEnd = len(path)
-		} else {
-			paramEnd += valueStart
+	paramStart := -1
+	if paramStart = bytes.Index(path, append([]byte{'&'}, append(name, '=')...)); paramStart == -1 {
+		if paramStart = bytes.Index(path, append([]byte{'?'}, append(name, '=')...)); paramStart == -1 {
+			return []byte(""), -1, -1
 		}
-
-		return path[valueStart:paramEnd], valueStart, paramEnd
 	}
 
-	return []byte(""), -1, -1
+	valueStart = paramStart + len(name) + 2
+	paramEnd := bytes.IndexByte(path[valueStart:], '&')
+
+	// Param can end with '&' (another param), or end of line
+	if paramEnd == -1 { // It is final param
+		paramEnd = len(path)
+	} else {
+		paramEnd += valueStart
+	}
+	return path[valueStart:paramEnd], valueStart, paramEnd
 }
 
 // SetPathParam takes payload and updates path Query attribute
