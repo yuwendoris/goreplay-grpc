@@ -10,12 +10,21 @@ import (
 
 // KafkaConfig should contains required information to
 // build producers.
-type KafkaConfig struct {
-	host     string
-	topic    string
+
+type InputKafkaConfig struct {
 	producer sarama.AsyncProducer
 	consumer sarama.Consumer
-	useJSON  bool
+	Host     string `json:"input-kafka-Host"`
+	Topic    string `json:"input-kafka-Topic"`
+	UseJSON  bool   `json:"input-kafka-json-format"`
+}
+
+type OutputKafkaConfig struct {
+	producer sarama.AsyncProducer
+	consumer sarama.Consumer
+	Host     string `json:"output-kafka-Host"`
+	Topic    string `json:"output-kafka-Topic"`
+	UseJSON  bool   `json:"output-kafka-json-format"`
 }
 
 // KafkaMessage should contains catched request information that should be

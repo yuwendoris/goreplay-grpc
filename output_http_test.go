@@ -42,7 +42,7 @@ func TestHTTPOutput(t *testing.T) {
 
 	headers := HTTPHeaders{HTTPHeader{"User-Agent", "Gor"}}
 	methods := HTTPMethods{[]byte("GET"), []byte("PUT"), []byte("POST")}
-	Settings.modifierConfig = HTTPModifierConfig{headers: headers, methods: methods}
+	Settings.ModifierConfig = HTTPModifierConfig{headers: headers, methods: methods}
 
 	http_output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: true, TrackResponses: true})
 	output := NewTestOutput(func(data []byte) {
@@ -56,7 +56,7 @@ func TestHTTPOutput(t *testing.T) {
 	plugins.All = append(plugins.All, input, output, http_output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 10; i++ {
 		// 2 http-output, 2 - test output request, 2 - test output http response
@@ -75,7 +75,7 @@ func TestHTTPOutput(t *testing.T) {
 		t.Error("Should create workers for each request", activeWorkers)
 	}
 
-	Settings.modifierConfig = HTTPModifierConfig{}
+	Settings.ModifierConfig = HTTPModifierConfig{}
 }
 
 func TestHTTPOutputKeepOriginalHost(t *testing.T) {
@@ -85,7 +85,7 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	input := NewTestInput()
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Host != "custom-host.com" {
+		if req.Host != "custom-Host.com" {
 			t.Error("Wrong header", req.Host)
 		}
 
@@ -93,8 +93,8 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	}))
 	defer server.Close()
 
-	headers := HTTPHeaders{HTTPHeader{"Host", "custom-host.com"}}
-	Settings.modifierConfig = HTTPModifierConfig{headers: headers}
+	headers := HTTPHeaders{HTTPHeader{"Host", "custom-Host.com"}}
+	Settings.ModifierConfig = HTTPModifierConfig{headers: headers}
 
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: false, OriginalHost: true})
 
@@ -105,14 +105,14 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	wg.Add(1)
 	input.EmitGET()
 
 	wg.Wait()
 	emitter.Close()
-	Settings.modifierConfig = HTTPModifierConfig{}
+	Settings.ModifierConfig = HTTPModifierConfig{}
 }
 
 func TestHTTPOutputSSL(t *testing.T) {
@@ -134,7 +134,7 @@ func TestHTTPOutputSSL(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	wg.Add(2)
 
@@ -157,7 +157,7 @@ func TestHTTPOutputSessions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	Settings.recognizeTCPSessions = true
+	Settings.RecognizeTCPSessions = true
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: true})
 
 	plugins := &InOutPlugins{
@@ -165,7 +165,7 @@ func TestHTTPOutputSessions(t *testing.T) {
 		Outputs: []io.Writer{output},
 	}
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	uuid1 := []byte("1234567890123456789a0000")
 	uuid2 := []byte("1234567890123456789d0000")
@@ -190,7 +190,7 @@ func TestHTTPOutputSessions(t *testing.T) {
 
 	emitter.Close()
 
-	Settings.recognizeTCPSessions = false
+	Settings.RecognizeTCPSessions = false
 }
 
 func BenchmarkHTTPOutput(b *testing.B) {
@@ -213,7 +213,7 @@ func BenchmarkHTTPOutput(b *testing.B) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < b.N; i++ {
 		wg.Add(1)

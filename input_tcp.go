@@ -21,9 +21,9 @@ type TCPInput struct {
 }
 
 type TCPInputConfig struct {
-	secure          bool
-	certificatePath string
-	keyPath         string
+	secure          bool   `json:"input-tcp-secure"`
+	certificatePath string `json:"input-tcp-certificate"`
+	keyPath         string `json:"input-tcp-certificate-key"`
 }
 
 // NewTCPInput constructor for TCPInput, accepts address with port

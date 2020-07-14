@@ -12,13 +12,13 @@ import (
 // KafkaInput is used for recieving Kafka messages and
 // transforming them into HTTP payloads.
 type KafkaInput struct {
-	config    *KafkaConfig
+	config    *InputKafkaConfig
 	consumers []sarama.PartitionConsumer
 	messages  chan *sarama.ConsumerMessage
 }
 
 // NewKafkaInput creates instance of kafka consumer client.
-func NewKafkaInput(address string, config *KafkaConfig) *KafkaInput {
+func NewKafkaInput(address string, config *InputKafkaConfig) *KafkaInput {
 	c := sarama.NewConfig()
 	// Configuration options go here
 
@@ -28,15 +28,15 @@ func NewKafkaInput(address string, config *KafkaConfig) *KafkaInput {
 		con = config.consumer
 	} else {
 		var err error
-		//con, err = sarama.NewConsumer([]string{config.host}, c)
-		con, err = sarama.NewConsumer(strings.Split(config.host, ","), c)
+		//con, err = sarama.NewConsumer([]string{config.Host}, c)
+		con, err = sarama.NewConsumer(strings.Split(config.Host, ","), c)
 
 		if err != nil {
 			log.Fatalln("Failed to start Sarama(Kafka) consumer:", err)
 		}
 	}
 
-	partitions, err := con.Partitions(config.topic)
+	partitions, err := con.Partitions(config.Topic)
 	if err != nil {
 		log.Fatalln("Failed to collect Sarama(Kafka) partitions:", err)
 	}
@@ -48,7 +48,7 @@ func NewKafkaInput(address string, config *KafkaConfig) *KafkaInput {
 	}
 
 	for index, partition := range partitions {
-		consumer, err := con.ConsumePartition(config.topic, partition, sarama.OffsetNewest)
+		consumer, err := con.ConsumePartition(config.Topic, partition, sarama.OffsetNewest)
 		if err != nil {
 			log.Fatalln("Failed to start Sarama(Kafka) partition consumer:", err)
 		}
@@ -61,7 +61,7 @@ func NewKafkaInput(address string, config *KafkaConfig) *KafkaInput {
 			}
 		}(consumer)
 
-		if Settings.verbose {
+		if Settings.Verbose {
 			// Start infinite loop for tracking errors for kafka producer.
 			go i.ErrorHandler(consumer)
 		}
@@ -82,7 +82,7 @@ func (i *KafkaInput) ErrorHandler(consumer sarama.PartitionConsumer) {
 func (i *KafkaInput) Read(data []byte) (int, error) {
 	message := <-i.messages
 
-	if !i.config.useJSON {
+	if !i.config.UseJSON {
 		copy(data, message.Value)
 		return len(message.Value), nil
 	}
@@ -103,5 +103,5 @@ func (i *KafkaInput) Read(data []byte) (int, error) {
 }
 
 func (i *KafkaInput) String() string {
-	return "Kafka Input: " + i.config.host + "/" + i.config.topic
+	return "Kafka Input: " + i.config.Host + "/" + i.config.Topic
 }

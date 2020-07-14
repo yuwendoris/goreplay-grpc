@@ -5,7 +5,7 @@ github.com/Shopify/sarama/mocks
 # github.com/araddon/gou v0.0.0-20190110011759-c797efecbb61
 ## explicit
 github.com/araddon/gou
-# github.com/aws/aws-sdk-go v1.32.7
+# github.com/aws/aws-sdk-go v1.33.2
 ## explicit
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -102,7 +102,7 @@ github.com/rcrowley/go-metrics
 ## explicit
 golang.org/x/crypto/md4
 golang.org/x/crypto/pbkdf2
-# golang.org/x/net v0.0.0-20200602114024-627f9648deb9
+# golang.org/x/net v0.0.0-20200707034311-ab3426394381
 ## explicit
 golang.org/x/net/internal/socks
 golang.org/x/net/proxy

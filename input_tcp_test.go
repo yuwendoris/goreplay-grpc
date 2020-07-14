@@ -34,7 +34,7 @@ func TestTCPInput(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", input.listener.Addr().String())
 
@@ -117,7 +117,7 @@ func TestTCPInputSecure(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	conf := &tls.Config{
 		InsecureSkipVerify: true,

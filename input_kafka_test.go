@@ -16,10 +16,10 @@ func TestInputKafkaRAW(t *testing.T) {
 		map[string][]int32{"test": {0}},
 	)
 
-	input := NewKafkaInput("", &KafkaConfig{
+	input := NewKafkaInput("", &InputKafkaConfig{
 		consumer: consumer,
-		topic:    "test",
-		useJSON:  false,
+		Topic:    "test",
+		UseJSON:  false,
 	})
 
 	buf := make([]byte, 1024)
@@ -43,10 +43,10 @@ func TestInputKafkaJSON(t *testing.T) {
 		map[string][]int32{"test": {0}},
 	)
 
-	input := NewKafkaInput("", &KafkaConfig{
+	input := NewKafkaInput("", &InputKafkaConfig{
 		consumer: consumer,
-		topic:    "test",
-		useJSON:  true,
+		Topic:    "test",
+		UseJSON:  true,
 	})
 
 	buf := make([]byte, 1024)

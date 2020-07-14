@@ -31,12 +31,12 @@ var dateFileNameFuncs = map[string]func(*FileOutput) string{
 
 // FileOutputConfig ...
 type FileOutputConfig struct {
-	flushInterval     time.Duration
+	flushInterval     time.Duration `json:"output-file-flush-interval"`
 	sizeLimit         int64
 	outputFileMaxSize int64
-	queueLimit        int64
-	append            bool
-	bufferPath        string
+	queueLimit        int64  `json:"output-file-queue-limit"`
+	append            bool   `json:"output-file-append"`
+	bufferPath        string `json:"output-file-buffer"`
 	onClose           func(string)
 }
 
@@ -233,7 +233,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 	o.totalFileSize += int64(n)
 	o.queueLength++
 
-	if Settings.outputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.outputFileConfig.outputFileMaxSize {
+	if Settings.OutputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.OutputFileConfig.outputFileMaxSize {
 		return n, errors.New("File output reached size limit")
 	}
 

@@ -15,7 +15,7 @@ import (
 
 // KafkaOutput is used for sending payloads to kafka in JSON format.
 type KafkaOutput struct {
-	config   *KafkaConfig
+	config   *OutputKafkaConfig
 	producer sarama.AsyncProducer
 }
 
@@ -23,7 +23,7 @@ type KafkaOutput struct {
 const KafkaOutputFrequency = 500
 
 // NewKafkaOutput creates instance of kafka producer client.
-func NewKafkaOutput(address string, config *KafkaConfig) io.Writer {
+func NewKafkaOutput(address string, config *OutputKafkaConfig) io.Writer {
 	c := sarama.NewConfig()
 
 	var producer sarama.AsyncProducer
@@ -35,7 +35,7 @@ func NewKafkaOutput(address string, config *KafkaConfig) io.Writer {
 		c.Producer.Compression = sarama.CompressionSnappy
 		c.Producer.Flush.Frequency = KafkaOutputFrequency * time.Millisecond
 
-		brokerList := strings.Split(config.host, ",")
+		brokerList := strings.Split(config.Host, ",")
 
 		var err error
 		producer, err = sarama.NewAsyncProducer(brokerList, c)
@@ -49,7 +49,7 @@ func NewKafkaOutput(address string, config *KafkaConfig) io.Writer {
 		producer: producer,
 	}
 
-	if Settings.verbose {
+	if Settings.Verbose {
 		// Start infinite loop for tracking errors for kafka producer.
 		go o.ErrorHandler()
 	}
@@ -67,7 +67,7 @@ func (o *KafkaOutput) ErrorHandler() {
 func (o *KafkaOutput) Write(data []byte) (n int, err error) {
 	var message sarama.StringEncoder
 
-	if !o.config.useJSON {
+	if !o.config.UseJSON {
 		message = sarama.StringEncoder(data)
 	} else {
 		headers := make(map[string]string)
@@ -93,7 +93,7 @@ func (o *KafkaOutput) Write(data []byte) (n int, err error) {
 	}
 
 	o.producer.Input() <- &sarama.ProducerMessage{
-		Topic: o.config.topic,
+		Topic: o.config.Topic,
 		Value: message,
 	}
 

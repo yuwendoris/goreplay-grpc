@@ -62,28 +62,28 @@ type response struct {
 
 // HTTPOutputConfig struct for holding http output configuration
 type HTTPOutputConfig struct {
-	redirectLimit int
+	redirectLimit int `json:"output-http-redirects"`
 
-	stats      bool
-	workersMin int
-	workersMax int
-	statsMs    int
+	stats      bool `json:"output-http-stats"`
+	workersMin int  `json:"output-http-workers-min"`
+	workersMax int  `json:"output-http-workers"`
+	statsMs    int  `json:"output-http-stats-ms"`
 	workers    int
-	queueLen   int
+	queueLen   int `json:"output-http-queue-len"`
 
-	elasticSearch string
+	elasticSearch string `json:"output-http-elasticsearch"`
 
-	Timeout      time.Duration
-	OriginalHost bool
-	BufferSize   int
+	Timeout      time.Duration `json:"output-http-timeout"`
+	OriginalHost bool          `json:"http-original-Host"`
+	BufferSize   int           `json:"output-http-response-buffer"`
 
-	CompatibilityMode bool
+	CompatibilityMode bool `json:"output-http-compatibility-mode"`
 
 	RequestGroup string
 
-	Debug bool
+	Debug bool `json:"output-http-debug"`
 
-	TrackResponses bool
+	TrackResponses bool `json:"output-http-track-response"`
 }
 
 // HTTPOutput plugin manage pool of workers which send request to replayed server
@@ -143,7 +143,7 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 		o.elasticSearch.Init(o.config.elasticSearch)
 	}
 
-	if Settings.recognizeTCPSessions {
+	if Settings.RecognizeTCPSessions {
 		if !PRO {
 			log.Fatal("Detailed TCP sessions work only with PRO license")
 		}
@@ -249,7 +249,7 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 		o.queueStats.Write(len(o.queue))
 	}
 
-	if !Settings.recognizeTCPSessions && o.config.workersMax != o.config.workersMin {
+	if !Settings.RecognizeTCPSessions && o.config.workersMax != o.config.workersMin {
 		workersCount := int(atomic.LoadInt64(&o.activeWorkers))
 
 		if len(o.queue) > workersCount {
@@ -275,7 +275,7 @@ func (o *HTTPOutput) Read(data []byte) (int, error) {
 	case resp = <-o.responses:
 	}
 
-	if Settings.debug {
+	if Settings.Debug {
 		Debug("[OUTPUT-HTTP] Received response:", string(resp.payload))
 	}
 
@@ -289,7 +289,7 @@ func (o *HTTPOutput) Read(data []byte) (int, error) {
 func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	meta := payloadMeta(request)
 
-	if Settings.debug {
+	if Settings.Debug {
 		Debug(meta)
 	}
 

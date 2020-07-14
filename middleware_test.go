@@ -114,7 +114,7 @@ func TestEchoMiddleware(t *testing.T) {
 
 	quit := make(chan int)
 
-	Settings.middleware = "./examples/middleware/echo.sh"
+	Settings.Middleware = "./examples/middleware/echo.sh"
 
 	// Catch traffic from one service
 	fromAddr := strings.Replace(from.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
@@ -132,7 +132,7 @@ func TestEchoMiddleware(t *testing.T) {
 
 	// Start Gor
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	// Wait till middleware initialization
 	time.Sleep(100 * time.Millisecond)
@@ -153,7 +153,7 @@ func TestEchoMiddleware(t *testing.T) {
 	emitter.Close()
 	time.Sleep(200 * time.Millisecond)
 
-	Settings.middleware = ""
+	Settings.Middleware = ""
 }
 
 func TestTokenMiddleware(t *testing.T) {
@@ -180,7 +180,7 @@ func TestTokenMiddleware(t *testing.T) {
 
 	quit := make(chan int)
 
-	Settings.middleware = "go run ./examples/middleware/token_modifier.go"
+	Settings.Middleware = "go run ./examples/middleware/token_modifier.go"
 
 	fromAddr := strings.Replace(from.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
 	// Catch traffic from one service
@@ -198,7 +198,7 @@ func TestTokenMiddleware(t *testing.T) {
 
 	// Start Gor
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	// Wait for middleware to initialize
 	// Give go compiller time to build programm
@@ -225,5 +225,5 @@ func TestTokenMiddleware(t *testing.T) {
 	wg.Wait()
 	emitter.Close()
 	time.Sleep(100 * time.Millisecond)
-	Settings.middleware = ""
+	Settings.Middleware = ""
 }

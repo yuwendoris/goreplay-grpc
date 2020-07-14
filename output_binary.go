@@ -8,11 +8,11 @@ import (
 
 // BinaryOutputConfig struct for holding binary output configuration
 type BinaryOutputConfig struct {
-	workers        int
-	Timeout        time.Duration
-	BufferSize     int
-	Debug          bool
-	TrackResponses bool
+	workers        int           `json:"output-binary-workers"`
+	Timeout        time.Duration `json:"output-binary-timeout"`
+	BufferSize     int           `json:"output-tcp-response-buffer"`
+	Debug          bool          `json:"output-binary-debug"`
+	TrackResponses bool          `json:"output-binary-track-response"`
 }
 
 // BinaryOutput plugin manage pool of workers which send request to replayed server

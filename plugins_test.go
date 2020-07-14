@@ -5,10 +5,10 @@ import (
 )
 
 func TestPluginsRegistration(t *testing.T) {
-	Settings.inputDummy = MultiOption{"[]"}
-	Settings.outputDummy = MultiOption{"[]"}
-	Settings.outputHTTP = MultiOption{"www.example.com|10"}
-	Settings.inputFile = MultiOption{"/dev/null"}
+	Settings.InputDummy = MultiOption{"[]"}
+	Settings.OutputDummy = MultiOption{"[]"}
+	Settings.OutputHTTP = MultiOption{"www.example.com|10"}
+	Settings.InputFile = MultiOption{"/dev/null"}
 
 	plugins := InitPlugins()
 

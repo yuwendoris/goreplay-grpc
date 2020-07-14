@@ -15,7 +15,7 @@ import (
 type ESUriErorr struct{}
 
 func (e *ESUriErorr) Error() string {
-	return "Wrong ElasticSearch URL format. Expected to be: scheme://host/index_name"
+	return "Wrong ElasticSearch URL format. Expected to be: scheme://Host/index_name"
 }
 
 type ESPlugin struct {
@@ -55,7 +55,7 @@ type ESRequestResponse struct {
 
 // Parse ElasticSearch URI
 //
-// Proper format is: scheme://[userinfo@]host/index_name
+// Proper format is: scheme://[userinfo@]Host/index_name
 // userinfo is: user[:password]
 // net/url.Parse() does not fail if scheme is not provided but actualy does not
 // handle URI properly.
@@ -69,7 +69,7 @@ func parseURI(URI string) (err error, index string) {
 		return
 	}
 
-	//	check URL validity by extracting host and undex values.
+	//	check URL validity by extracting Host and undex values.
 	host := parsedUrl.Host
 	urlPathParts := strings.Split(parsedUrl.Path, "/")
 	index = urlPathParts[len(urlPathParts)-1]
@@ -99,7 +99,7 @@ func (p *ESPlugin) Init(URI string) {
 	p.done = make(chan bool)
 	p.indexor.Start()
 
-	if Settings.verbose {
+	if Settings.Verbose {
 		// Only start the ErrorHandler goroutine when in verbose mode
 		// no need to burn ressources otherwise
 		go p.ErrorHandler()
