@@ -22,8 +22,8 @@ type TCPOutput struct {
 }
 
 type TCPOutputConfig struct {
-	secure bool `json:"output-tcp-secure"`
-	sticky bool `json:"output-tcp-sticky"`
+	Secure bool `json:"output-tcp-secure"`
+	Sticky bool `json:"output-tcp-sticky"`
 }
 
 // NewTCPOutput constructor for TCPOutput
@@ -38,7 +38,7 @@ func NewTCPOutput(address string, config *TCPOutputConfig) io.Writer {
 		o.bufStats = NewGorStat("output_tcp", 5000)
 	}
 
-	if o.config.sticky {
+	if o.config.Sticky {
 		// create 10 buffers and send the buffer index to the worker
 		o.buf = make([]chan []byte, 10)
 		for i := 0; i < 10; i++ {
@@ -93,7 +93,7 @@ func (o *TCPOutput) worker(bufferIndex int) {
 }
 
 func (o *TCPOutput) getBufferIndex(data []byte) int {
-	if !o.config.sticky {
+	if !o.config.Sticky {
 		return 0
 	}
 
@@ -122,7 +122,7 @@ func (o *TCPOutput) Write(data []byte) (n int, err error) {
 }
 
 func (o *TCPOutput) connect(address string) (conn net.Conn, err error) {
-	if o.config.secure {
+	if o.config.Secure {
 		conn, err = tls.Dial("tcp", address, &tls.Config{})
 	} else {
 		conn, err = net.Dial("tcp", address)

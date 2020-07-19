@@ -10,19 +10,19 @@ import (
 
 // HTTPModifierConfig holds configuration options for built-in traffic modifier
 type HTTPModifierConfig struct {
-	urlNegativeRegexp      HTTPUrlRegexp
-	urlRegexp              HTTPUrlRegexp
-	urlRewrite             UrlRewriteMap
-	headerRewrite          HeaderRewriteMap
-	headerFilters          HTTPHeaderFilters
-	headerNegativeFilters  HTTPHeaderFilters
-	headerBasicAuthFilters HTTPHeaderBasicAuthFilters
-	headerHashFilters      HTTPHashFilters
-	paramHashFilters       HTTPHashFilters
+	UrlNegativeRegexp      HTTPUrlRegexp              `json:"http-disallow-url"`
+	UrlRegexp              HTTPUrlRegexp              `json:"http-allow-url"`
+	UrlRewrite             UrlRewriteMap              `json:"http-rewrite-url"`
+	HeaderRewrite          HeaderRewriteMap           `json:"http-rewrite-header"`
+	HeaderFilters          HTTPHeaderFilters          `json:"http-allow-header"`
+	HeaderNegativeFilters  HTTPHeaderFilters          `json:"http-disallow-header"`
+	HeaderBasicAuthFilters HTTPHeaderBasicAuthFilters `json:"http-basic-auth-filter"`
+	HeaderHashFilters      HTTPHashFilters            `json:"http-header-limiter"`
+	ParamHashFilters       HTTPHashFilters            `json:"http-param-limiter"`
 
-	params  HTTPParams
-	headers HTTPHeaders
-	methods HTTPMethods
+	Params  HTTPParams  `json:"http-set-param"`
+	Headers HTTPHeaders `json:"http-set-header"`
+	Methods HTTPMethods `json:"http-allow-method"`
 }
 
 //

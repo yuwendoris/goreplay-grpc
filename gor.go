@@ -41,7 +41,7 @@ func main() {
 	// defer func() {
 	// 	if r := recover(); r != nil {
 	// 		fmt.Printf("PANIC: pkg: %v %s \n", r, debug.Stack())
-	// 	}̦
+	// 	}
 	// }()
 
 	// If not set via env cariable

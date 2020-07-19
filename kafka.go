@@ -14,16 +14,16 @@ import (
 type InputKafkaConfig struct {
 	producer sarama.AsyncProducer
 	consumer sarama.Consumer
-	Host     string `json:"input-kafka-Host"`
-	Topic    string `json:"input-kafka-Topic"`
+	Host     string `json:"input-kafka-host"`
+	Topic    string `json:"input-kafka-topic"`
 	UseJSON  bool   `json:"input-kafka-json-format"`
 }
 
 type OutputKafkaConfig struct {
 	producer sarama.AsyncProducer
 	consumer sarama.Consumer
-	Host     string `json:"output-kafka-Host"`
-	Topic    string `json:"output-kafka-Topic"`
+	Host     string `json:"output-kafka-host"`
+	Topic    string `json:"output-kafka-topic"`
 	UseJSON  bool   `json:"output-kafka-json-format"`
 }
 

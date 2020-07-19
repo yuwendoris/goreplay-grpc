@@ -7,8 +7,8 @@ import (
 )
 
 func TestAppSettings(t *testing.T) {
-	var a AppSettings
-	data, err := json.Marshal(a)
+	a := AppSettings{}
+	data, err := json.Marshal(&a)
 	if err != nil {
 		panic(err)
 	}

@@ -99,14 +99,14 @@ func InitPlugins() *InOutPlugins {
 	}
 
 	engine := EnginePcap
-	if Settings.InputRAWEngine == "raw_socket" {
+	if Settings.InputRAWConfig.Engine == "raw_socket" {
 		engine = EngineRawSocket
-	} else if Settings.InputRAWEngine == "pcap_file" {
+	} else if Settings.InputRAWConfig.Engine == "pcap_file" {
 		engine = EnginePcapFile
 	}
 
 	for _, options := range Settings.InputRAW {
-		registerPlugin(NewRAWInput, options, engine, Settings.InputRAWTrackResponse, Settings.InputRAWExpire, Settings.InputRAWRealIPHeader, Settings.InputRAWProtocol, Settings.InputRAWBpfFilter, Settings.InputRAWTimestampType, Settings.inputRAWBufferSize)
+		registerPlugin(NewRAWInput, options, engine, Settings.InputRAWConfig.TrackResponse, Settings.InputRAWConfig.Expire, Settings.InputRAWConfig.RealIPHeader, Settings.InputRAWConfig.Protocol, Settings.InputRAWConfig.BpfFilter, Settings.InputRAWConfig.TimestampType, Settings.InputRAWConfig.BufferSize)
 	}
 
 	for _, options := range Settings.InputTCP {
@@ -135,7 +135,7 @@ func InitPlugins() *InOutPlugins {
 
 	// If we explicitly set Host header http output should not rewrite it
 	// Fix: https://github.com/buger/gor/issues/174
-	for _, header := range Settings.ModifierConfig.headers {
+	for _, header := range Settings.ModifierConfig.Headers {
 		if header.Name == "Host" {
 			Settings.OutputHTTPConfig.OriginalHost = true
 			break

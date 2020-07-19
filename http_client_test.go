@@ -484,7 +484,7 @@ func TestHTTPClientErrors(t *testing.T) {
 	client = NewHTTPClient("http://not.existing", &HTTPClientConfig{Debug: true})
 	if resp, err := client.Send(req); err != nil {
 		if s := proto.Status(resp); !bytes.Equal(s, []byte("521")) {
-			t.Error("Should return status 521 for no such Host, instead:", string(s))
+			t.Error("Should return status 521 for no such host, instead:", string(s))
 		}
 	} else {
 		t.Error("Should throw error")

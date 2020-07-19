@@ -32,7 +32,7 @@ func assertNoError(returnedError error, t *testing.T) {
 	}
 }
 
-// Argument Host:port/index_name
+// Argument host:port/index_name
 // i.e : localhost:9200/gor
 // Fail because scheme is mandatory
 func TestElasticConnectionBuildFailWithoutScheme(t *testing.T) {

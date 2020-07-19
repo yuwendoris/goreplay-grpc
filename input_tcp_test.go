@@ -102,9 +102,9 @@ func TestTCPInputSecure(t *testing.T) {
 	quit := make(chan int)
 
 	input := NewTCPInput("127.0.0.1:0", &TCPInputConfig{
-		secure:          true,
-		certificatePath: serverCertPemFile.Name(),
-		keyPath:         serverPrivPemFile.Name(),
+		Secure:          true,
+		CertificatePath: serverCertPemFile.Name(),
+		KeyPath:         serverPrivPemFile.Name(),
 	})
 	output := NewTestOutput(func(data []byte) {
 		wg.Done()

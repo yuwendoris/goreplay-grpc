@@ -42,7 +42,7 @@ func TestHTTPOutput(t *testing.T) {
 
 	headers := HTTPHeaders{HTTPHeader{"User-Agent", "Gor"}}
 	methods := HTTPMethods{[]byte("GET"), []byte("PUT"), []byte("POST")}
-	Settings.ModifierConfig = HTTPModifierConfig{headers: headers, methods: methods}
+	Settings.ModifierConfig = HTTPModifierConfig{Headers: headers, Methods: methods}
 
 	http_output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: true, TrackResponses: true})
 	output := NewTestOutput(func(data []byte) {
@@ -85,7 +85,7 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	input := NewTestInput()
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if req.Host != "custom-Host.com" {
+		if req.Host != "custom-host.com" {
 			t.Error("Wrong header", req.Host)
 		}
 
@@ -93,8 +93,8 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	}))
 	defer server.Close()
 
-	headers := HTTPHeaders{HTTPHeader{"Host", "custom-Host.com"}}
-	Settings.ModifierConfig = HTTPModifierConfig{headers: headers}
+	headers := HTTPHeaders{HTTPHeader{"Host", "custom-host.com"}}
+	Settings.ModifierConfig = HTTPModifierConfig{Headers: headers}
 
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{Debug: false, OriginalHost: true})
 

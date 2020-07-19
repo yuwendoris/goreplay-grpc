@@ -99,7 +99,6 @@ github.com/rcrowley/go-metrics
 # github.com/smartystreets/goconvey v1.6.4
 ## explicit
 # golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
-## explicit
 golang.org/x/crypto/md4
 golang.org/x/crypto/pbkdf2
 # golang.org/x/net v0.0.0-20200707034311-ab3426394381

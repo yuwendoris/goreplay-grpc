@@ -21,9 +21,9 @@ type TCPInput struct {
 }
 
 type TCPInputConfig struct {
-	secure          bool   `json:"input-tcp-secure"`
-	certificatePath string `json:"input-tcp-certificate"`
-	keyPath         string `json:"input-tcp-certificate-key"`
+	Secure          bool   `json:"input-tcp-secure"`
+	CertificatePath string `json:"input-tcp-certificate"`
+	KeyPath         string `json:"input-tcp-certificate-key"`
 }
 
 // NewTCPInput constructor for TCPInput, accepts address with port
@@ -57,8 +57,8 @@ func (i *TCPInput) Close() error {
 }
 
 func (i *TCPInput) listen(address string) {
-	if i.config.secure {
-		cer, err := tls.LoadX509KeyPair(i.config.certificatePath, i.config.keyPath)
+	if i.config.Secure {
+		cer, err := tls.LoadX509KeyPair(i.config.CertificatePath, i.config.KeyPath)
 		if err != nil {
 			log.Fatal("Error while loading --input-file certificate:", err)
 		}

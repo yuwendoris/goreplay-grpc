@@ -61,7 +61,7 @@ func TestEmitterFiltered(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	methods := HTTPMethods{[]byte("GET")}
-	Settings.ModifierConfig = HTTPModifierConfig{methods: methods}
+	Settings.ModifierConfig = HTTPModifierConfig{Methods: methods}
 
 	emitter := &emitter{quit: quit}
 	go emitter.Start(plugins, "")

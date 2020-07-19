@@ -8,7 +8,7 @@ import (
 
 // BinaryOutputConfig struct for holding binary output configuration
 type BinaryOutputConfig struct {
-	workers        int           `json:"output-binary-workers"`
+	Workers        int           `json:"output-binary-workers"`
 	Timeout        time.Duration `json:"output-binary-timeout"`
 	BufferSize     int           `json:"output-tcp-response-buffer"`
 	Debug          bool          `json:"output-binary-debug"`
@@ -49,10 +49,10 @@ func NewBinaryOutput(address string, config *BinaryOutputConfig) io.Writer {
 	o.needWorker = make(chan int, 1)
 
 	// Initial workers count
-	if o.config.workers == 0 {
+	if o.config.Workers == 0 {
 		o.needWorker <- initialDynamicWorkers
 	} else {
-		o.needWorker <- o.config.workers
+		o.needWorker <- o.config.Workers
 	}
 
 	go o.workerMaster()
@@ -68,7 +68,7 @@ func (o *BinaryOutput) workerMaster() {
 		}
 
 		// Disable dynamic scaling if workers poll fixed size
-		if o.config.workers != 0 {
+		if o.config.Workers != 0 {
 			return
 		}
 	}
@@ -92,7 +92,7 @@ func (o *BinaryOutput) startWorker() {
 			deathCount = 0
 		case <-time.After(time.Millisecond * 100):
 			// When dynamic scaling enabled workers die after 2s of inactivity
-			if o.config.workers == 0 {
+			if o.config.Workers == 0 {
 				deathCount++
 			} else {
 				continue
@@ -121,7 +121,7 @@ func (o *BinaryOutput) Write(data []byte) (n int, err error) {
 
 	o.queue <- buf
 
-	if o.config.workers == 0 {
+	if o.config.Workers == 0 {
 		workersCount := atomic.LoadInt64(&o.activeWorkers)
 
 		if len(o.queue) > int(workersCount) {

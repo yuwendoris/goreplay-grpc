@@ -24,6 +24,7 @@ gor
 
 .DS_Store
 
+goreplay
 corpus
 crashers
 suppressions

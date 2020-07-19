@@ -95,7 +95,7 @@ func BenchmarkTCPOutput(b *testing.B) {
 }
 
 func TestStickyDisable(t *testing.T) {
-	tcpOutput := TCPOutput{config: &TCPOutputConfig{sticky: false}}
+	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: false}}
 
 	for i := 0; i < 1000; i++ {
 		index := tcpOutput.getBufferIndex(getTestBytes())
@@ -111,7 +111,7 @@ func TestBufferDistribution(t *testing.T) {
 	percentDistributionErrorRange := 20
 
 	buffer := make([]int, numberOfWorkers)
-	tcpOutput := TCPOutput{config: &TCPOutputConfig{sticky: true}}
+	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: true}}
 	for i := 0; i < numberOfMessages; i++ {
 		buffer[tcpOutput.getBufferIndex(getTestBytes())]++
 	}
