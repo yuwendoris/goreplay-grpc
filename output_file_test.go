@@ -18,7 +18,7 @@ func TestFileOutput(t *testing.T) {
 	quit := make(chan int)
 
 	input := NewTestInput()
-	output := NewFileOutput("/tmp/test_requests.gor", &FileOutputConfig{flushInterval: time.Minute, append: true})
+	output := NewFileOutput("/tmp/test_requests.gor", &FileOutputConfig{FlushInterval: time.Minute, Append: true})
 
 	plugins := &InOutPlugins{
 		Inputs:  []io.Reader{input},
@@ -27,7 +27,7 @@ func TestFileOutput(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 100; i++ {
 		wg.Add(2)
@@ -53,14 +53,14 @@ func TestFileOutput(t *testing.T) {
 
 	quit2 := make(chan int)
 	emitter2 := NewEmitter(quit2)
-	go emitter2.Start(plugins2, Settings.middleware)
+	go emitter2.Start(plugins2, Settings.Middleware)
 
 	wg.Wait()
 	emitter2.Close()
 }
 
 func TestFileOutputWithNameCleaning(t *testing.T) {
-	output := &FileOutput{pathTemplate: "./test_requests.gor", config: &FileOutputConfig{flushInterval: time.Minute, append: false}}
+	output := &FileOutput{pathTemplate: "./test_requests.gor", config: &FileOutputConfig{FlushInterval: time.Minute, Append: false}}
 	expectedFileName := "test_requests_0.gor"
 	output.updateName()
 
@@ -71,7 +71,7 @@ func TestFileOutputWithNameCleaning(t *testing.T) {
 }
 
 func TestFileOutputPathTemplate(t *testing.T) {
-	output := &FileOutput{pathTemplate: "/tmp/log-%Y-%m-%d-%S-%t", config: &FileOutputConfig{flushInterval: time.Minute, append: true}}
+	output := &FileOutput{pathTemplate: "/tmp/log-%Y-%m-%d-%S-%t", config: &FileOutputConfig{FlushInterval: time.Minute, Append: true}}
 	now := time.Now()
 	output.payloadType = []byte("3")
 	expectedPath := fmt.Sprintf("/tmp/log-%s-%s-%s-%s-3", now.Format("2006"), now.Format("01"), now.Format("02"), now.Format("05"))
@@ -83,7 +83,7 @@ func TestFileOutputPathTemplate(t *testing.T) {
 }
 
 func TestFileOutputMultipleFiles(t *testing.T) {
-	output := NewFileOutput("/tmp/log-%Y-%m-%d-%S", &FileOutputConfig{append: true, flushInterval: time.Minute})
+	output := NewFileOutput("/tmp/log-%Y-%m-%d-%S", &FileOutputConfig{Append: true, FlushInterval: time.Minute})
 
 	if output.file != nil {
 		t.Error("Should not initialize file if no writes")
@@ -114,7 +114,7 @@ func TestFileOutputMultipleFiles(t *testing.T) {
 }
 
 func TestFileOutputFilePerRequest(t *testing.T) {
-	output := NewFileOutput("/tmp/log-%Y-%m-%d-%S-%r", &FileOutputConfig{append: true})
+	output := NewFileOutput("/tmp/log-%Y-%m-%d-%S-%r", &FileOutputConfig{Append: true})
 
 	if output.file != nil {
 		t.Error("Should not initialize file if no writes")
@@ -142,7 +142,7 @@ func TestFileOutputFilePerRequest(t *testing.T) {
 }
 
 func TestFileOutputCompression(t *testing.T) {
-	output := NewFileOutput("/tmp/log-%Y-%m-%d-%S.gz", &FileOutputConfig{append: true, flushInterval: time.Minute})
+	output := NewFileOutput("/tmp/log-%Y-%m-%d-%S.gz", &FileOutputConfig{Append: true, FlushInterval: time.Minute})
 
 	if output.file != nil {
 		t.Error("Should not initialize file if no writes")
@@ -230,7 +230,7 @@ func TestFileOutputAppendQueueLimitOverflow(t *testing.T) {
 	rnd := rand.Int63()
 	name := fmt.Sprintf("/tmp/%d", rnd)
 
-	output := NewFileOutput(name, &FileOutputConfig{append: false, flushInterval: time.Minute, queueLimit: 2})
+	output := NewFileOutput(name, &FileOutputConfig{Append: false, FlushInterval: time.Minute, QueueLimit: 2})
 
 	output.Write([]byte("1 1 1\r\ntest"))
 	name1 := output.file.Name()
@@ -259,7 +259,7 @@ func TestFileOutputAppendQueueLimitNoOverflow(t *testing.T) {
 	rnd := rand.Int63()
 	name := fmt.Sprintf("/tmp/%d", rnd)
 
-	output := NewFileOutput(name, &FileOutputConfig{append: false, flushInterval: time.Minute, queueLimit: 3})
+	output := NewFileOutput(name, &FileOutputConfig{Append: false, FlushInterval: time.Minute, QueueLimit: 3})
 
 	output.Write([]byte("1 1 1\r\ntest"))
 	name1 := output.file.Name()
@@ -288,7 +288,7 @@ func TestFileOutputAppendQueueLimitGzips(t *testing.T) {
 	rnd := rand.Int63()
 	name := fmt.Sprintf("/tmp/%d.gz", rnd)
 
-	output := NewFileOutput(name, &FileOutputConfig{append: false, flushInterval: time.Minute, queueLimit: 2})
+	output := NewFileOutput(name, &FileOutputConfig{Append: false, FlushInterval: time.Minute, QueueLimit: 2})
 
 	output.Write([]byte("1 1 1\r\ntest"))
 	name1 := output.file.Name()
@@ -331,7 +331,7 @@ func TestFileOutputAppendSizeLimitOverflow(t *testing.T) {
 
 	messageSize := len(message) + len(payloadSeparator)
 
-	output := NewFileOutput(name, &FileOutputConfig{append: false, flushInterval: time.Minute, sizeLimit: 2 * int64(messageSize)})
+	output := NewFileOutput(name, &FileOutputConfig{Append: false, FlushInterval: time.Minute, sizeLimit: 2 * int64(messageSize)})
 
 	output.Write([]byte("1 1 1\r\ntest"))
 	name1 := output.file.Name()

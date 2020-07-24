@@ -69,7 +69,7 @@ func parseURI(URI string) (err error, index string) {
 		return
 	}
 
-	//	check URL validity by extracting host and undex values.
+	//	check URL validity by extracting host and index values.
 	host := parsedUrl.Host
 	urlPathParts := strings.Split(parsedUrl.Path, "/")
 	index = urlPathParts[len(urlPathParts)-1]
@@ -99,7 +99,7 @@ func (p *ESPlugin) Init(URI string) {
 	p.done = make(chan bool)
 	p.indexor.Start()
 
-	if Settings.verbose {
+	if Settings.Verbose {
 		// Only start the ErrorHandler goroutine when in verbose mode
 		// no need to burn ressources otherwise
 		go p.ErrorHandler()

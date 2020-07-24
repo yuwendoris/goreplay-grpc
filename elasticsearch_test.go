@@ -42,7 +42,7 @@ func TestElasticConnectionBuildFailWithoutScheme(t *testing.T) {
 	assertExpectedError(err, t)
 }
 
-// Argument scheme://host:port
+// Argument scheme://Host:port
 // i.e : http://localhost:9200
 // Fail : explicit index is required
 func TestElasticConnectionBuildFailWithoutIndex(t *testing.T) {
@@ -55,7 +55,7 @@ func TestElasticConnectionBuildFailWithoutIndex(t *testing.T) {
 	assertExpectedError(err, t)
 }
 
-// Argument scheme://host/index_name
+// Argument scheme://Host/index_name
 // i.e : http://localhost/gor
 func TestElasticConnectionBuildFailWithoutPort(t *testing.T) {
 	uri := "http://localhost/" + expectedIndex
@@ -67,7 +67,7 @@ func TestElasticConnectionBuildFailWithoutPort(t *testing.T) {
 	assertExpectedGorIndex(index, t)
 }
 
-// Argument scheme://host:port/index_name
+// Argument scheme://Host:port/index_name
 // i.e : http://localhost:9200/gor
 func TestElasticLocalConnectionBuild(t *testing.T) {
 	uri := "http://localhost:9200/" + expectedIndex
@@ -79,7 +79,7 @@ func TestElasticLocalConnectionBuild(t *testing.T) {
 	assertExpectedGorIndex(index, t)
 }
 
-// Argument scheme://host:port/index_name
+// Argument scheme://Host:port/index_name
 // i.e : http://localhost.local:9200/gor or https://localhost.local:9200/gor
 func TestElasticSimpleLocalWithSchemeConnectionBuild(t *testing.T) {
 	uri := "http://localhost.local:9200/" + expectedIndex
@@ -91,7 +91,7 @@ func TestElasticSimpleLocalWithSchemeConnectionBuild(t *testing.T) {
 	assertExpectedGorIndex(index, t)
 }
 
-// Argument scheme://host:port/index_name
+// Argument scheme://Host:port/index_name
 // i.e : http://localhost.local:9200/gor or https://localhost.local:9200/gor
 func TestElasticSimpleLocalWithHTTPSConnectionBuild(t *testing.T) {
 	uri := "https://localhost.local:9200/" + expectedIndex
@@ -103,7 +103,7 @@ func TestElasticSimpleLocalWithHTTPSConnectionBuild(t *testing.T) {
 	assertExpectedGorIndex(index, t)
 }
 
-// Argument scheme://host:port/index_name
+// Argument scheme://Host:port/index_name
 // i.e : localhost.local:9200/pathtoElastic/gor
 func TestElasticLongPathConnectionBuild(t *testing.T) {
 	uri := "http://localhost.local:9200/pathtoElastic/" + expectedIndex
@@ -115,7 +115,7 @@ func TestElasticLongPathConnectionBuild(t *testing.T) {
 	assertExpectedGorIndex(index, t)
 }
 
-// Argument scheme://host:userinfo@port/index_name
+// Argument scheme://Host:userinfo@port/index_name
 // i.e : http://user:password@localhost.local:9200/gor
 func TestElasticBasicAuthConnectionBuild(t *testing.T) {
 	uri := "http://user:password@localhost.local:9200/" + expectedIndex
@@ -127,7 +127,7 @@ func TestElasticBasicAuthConnectionBuild(t *testing.T) {
 	assertExpectedGorIndex(index, t)
 }
 
-// Argument scheme://host:port/path/index_name
+// Argument scheme://Host:port/path/index_name
 // i.e : http://localhost.local:9200/path/gor or https://localhost.local:9200/path/gor
 func TestElasticComplexPathConnectionBuild(t *testing.T) {
 	uri := "http://localhost.local:9200/path/" + expectedIndex

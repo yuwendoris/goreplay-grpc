@@ -82,80 +82,80 @@ func InitPlugins() *InOutPlugins {
 	pluginMu.Lock()
 	defer pluginMu.Unlock()
 
-	for _, options := range Settings.inputDummy {
+	for _, options := range Settings.InputDummy {
 		registerPlugin(NewDummyInput, options)
 	}
 
-	for range Settings.outputDummy {
+	for range Settings.OutputDummy {
 		registerPlugin(NewDummyOutput)
 	}
 
-	if Settings.outputStdout {
+	if Settings.OutputStdout {
 		registerPlugin(NewDummyOutput)
 	}
 
-	if Settings.outputNull {
+	if Settings.OutputNull {
 		registerPlugin(NewNullOutput)
 	}
 
 	engine := EnginePcap
-	if Settings.inputRAWEngine == "raw_socket" {
+	if Settings.InputRAWConfig.Engine == "raw_socket" {
 		engine = EngineRawSocket
-	} else if Settings.inputRAWEngine == "pcap_file" {
+	} else if Settings.InputRAWConfig.Engine == "pcap_file" {
 		engine = EnginePcapFile
 	}
 
-	for _, options := range Settings.inputRAW {
-		registerPlugin(NewRAWInput, options, engine, Settings.inputRAWTrackResponse, Settings.inputRAWExpire, Settings.inputRAWRealIPHeader, Settings.inputRAWProtocol, Settings.inputRAWBpfFilter, Settings.inputRAWTimestampType, Settings.inputRAWBufferSize)
+	for _, options := range Settings.InputRAW {
+		registerPlugin(NewRAWInput, options, engine, Settings.InputRAWConfig.TrackResponse, Settings.InputRAWConfig.Expire, Settings.InputRAWConfig.RealIPHeader, Settings.InputRAWConfig.Protocol, Settings.InputRAWConfig.BpfFilter, Settings.InputRAWConfig.TimestampType, Settings.InputRAWConfig.BufferSize)
 	}
 
-	for _, options := range Settings.inputTCP {
-		registerPlugin(NewTCPInput, options, &Settings.inputTCPConfig)
+	for _, options := range Settings.InputTCP {
+		registerPlugin(NewTCPInput, options, &Settings.InputTCPConfig)
 	}
 
-	for _, options := range Settings.outputTCP {
-		registerPlugin(NewTCPOutput, options, &Settings.outputTCPConfig)
+	for _, options := range Settings.OutputTCP {
+		registerPlugin(NewTCPOutput, options, &Settings.OutputTCPConfig)
 	}
 
-	for _, options := range Settings.inputFile {
-		registerPlugin(NewFileInput, options, Settings.inputFileLoop)
+	for _, options := range Settings.InputFile {
+		registerPlugin(NewFileInput, options, Settings.InputFileLoop)
 	}
 
-	for _, path := range Settings.outputFile {
+	for _, path := range Settings.OutputFile {
 		if strings.HasPrefix(path, "s3://") {
-			registerPlugin(NewS3Output, path, &Settings.outputFileConfig)
+			registerPlugin(NewS3Output, path, &Settings.OutputFileConfig)
 		} else {
-			registerPlugin(NewFileOutput, path, &Settings.outputFileConfig)
+			registerPlugin(NewFileOutput, path, &Settings.OutputFileConfig)
 		}
 	}
 
-	for _, options := range Settings.inputHTTP {
+	for _, options := range Settings.InputHTTP {
 		registerPlugin(NewHTTPInput, options)
 	}
 
 	// If we explicitly set Host header http output should not rewrite it
 	// Fix: https://github.com/buger/gor/issues/174
-	for _, header := range Settings.modifierConfig.headers {
+	for _, header := range Settings.ModifierConfig.Headers {
 		if header.Name == "Host" {
-			Settings.outputHTTPConfig.OriginalHost = true
+			Settings.OutputHTTPConfig.OriginalHost = true
 			break
 		}
 	}
 
-	for _, options := range Settings.outputHTTP {
-		registerPlugin(NewHTTPOutput, options, &Settings.outputHTTPConfig)
+	for _, options := range Settings.OutputHTTP {
+		registerPlugin(NewHTTPOutput, options, &Settings.OutputHTTPConfig)
 	}
 
-	for _, options := range Settings.outputBinary {
-		registerPlugin(NewBinaryOutput, options, &Settings.outputBinaryConfig)
+	for _, options := range Settings.OutputBinary {
+		registerPlugin(NewBinaryOutput, options, &Settings.OutputBinaryConfig)
 	}
 
-	if Settings.outputKafkaConfig.host != "" && Settings.outputKafkaConfig.topic != "" {
-		registerPlugin(NewKafkaOutput, "", &Settings.outputKafkaConfig)
+	if Settings.OutputKafkaConfig.Host != "" && Settings.OutputKafkaConfig.Topic != "" {
+		registerPlugin(NewKafkaOutput, "", &Settings.OutputKafkaConfig)
 	}
 
-	if Settings.inputKafkaConfig.host != "" && Settings.inputKafkaConfig.topic != "" {
-		registerPlugin(NewKafkaInput, "", &Settings.inputKafkaConfig)
+	if Settings.InputKafkaConfig.Host != "" && Settings.InputKafkaConfig.Topic != "" {
+		registerPlugin(NewKafkaInput, "", &Settings.InputKafkaConfig)
 	}
 
 	return plugins

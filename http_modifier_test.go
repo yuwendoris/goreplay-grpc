@@ -18,7 +18,7 @@ func TestHTTPModifierHeaderFilters(t *testing.T) {
 	filters.Set("Host:^www.w3.org$")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headerFilters: filters,
+		HeaderFilters: filters,
 	})
 
 	payload := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
@@ -32,7 +32,7 @@ func TestHTTPModifierHeaderFilters(t *testing.T) {
 	filters.Set("Host:^www.w4.org$")
 
 	modifier = NewHTTPModifier(&HTTPModifierConfig{
-		headerFilters: filters,
+		HeaderFilters: filters,
 	})
 
 	if len(modifier.Rewrite(payload)) != 0 {
@@ -45,7 +45,7 @@ func TestHTTPModifierHeaderNegativeFilters(t *testing.T) {
 	filters.Set("Host:^www.w3.org$")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headerNegativeFilters: filters,
+		HeaderNegativeFilters: filters,
 	})
 
 	payload := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w4.org\r\n\r\na=1&b=2")
@@ -59,7 +59,7 @@ func TestHTTPModifierHeaderNegativeFilters(t *testing.T) {
 	filters.Set("Host:^www.w4.org$")
 
 	modifier = NewHTTPModifier(&HTTPModifierConfig{
-		headerNegativeFilters: filters,
+		HeaderNegativeFilters: filters,
 	})
 
 	if len(modifier.Rewrite(payload)) != 0 {
@@ -71,7 +71,7 @@ func TestHTTPModifierHeaderNegativeFilters(t *testing.T) {
 	filters.Set("Host: www*")
 
 	modifier = NewHTTPModifier(&HTTPModifierConfig{
-		headerNegativeFilters: filters,
+		HeaderNegativeFilters: filters,
 	})
 
 	if len(modifier.Rewrite(payload)) != 0 {
@@ -84,7 +84,7 @@ func TestHTTPHeaderBasicAuthFilters(t *testing.T) {
 	filters.Set("^customer[0-9].*")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headerBasicAuthFilters: filters,
+		HeaderBasicAuthFilters: filters,
 	})
 
 	//Encoded UserId:Password = customer3:welcome
@@ -104,7 +104,7 @@ func TestHTTPHeaderBasicAuthFilters(t *testing.T) {
 	filters.Set("^(homer simpson|mickey mouse).*")
 
 	modifier = NewHTTPModifier(&HTTPModifierConfig{
-		headerBasicAuthFilters: filters,
+		HeaderBasicAuthFilters: filters,
 	})
 
 	if len(modifier.Rewrite(payload)) != 0 {
@@ -133,7 +133,7 @@ func TestHTTPModifierURLRewrite(t *testing.T) {
 	}
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		urlRewrite: rewrites,
+		UrlRewrite: rewrites,
 	})
 
 	url = []byte("/v1/user/joe/ping")
@@ -159,7 +159,7 @@ func TestHTTPModifierHeaderRewrite(t *testing.T) {
 	}
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headerRewrite: rewrites,
+		HeaderRewrite: rewrites,
 	})
 
 	header = []byte("www.beta.w3.org")
@@ -173,7 +173,7 @@ func TestHTTPModifierHeaderHashFilters(t *testing.T) {
 	filters.Set("Header2:1/2")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headerHashFilters: filters,
+		HeaderHashFilters: filters,
 	})
 
 	payload := func(header []byte) []byte {
@@ -198,7 +198,7 @@ func TestHTTPModifierParamHashFilters(t *testing.T) {
 	filters.Set("user_id:1/2")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		paramHashFilters: filters,
+		ParamHashFilters: filters,
 	})
 
 	payload := func(value []byte) []byte {
@@ -224,7 +224,7 @@ func TestHTTPModifierHeaders(t *testing.T) {
 	headers.Set("Host:localhost")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headers: headers,
+		Headers: headers,
 	})
 
 	payload := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
@@ -241,7 +241,7 @@ func TestHTTPModifierURLRegexp(t *testing.T) {
 	filters.Set("/v1/api")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		urlRegexp: filters,
+		UrlRegexp: filters,
 	})
 
 	payload := func(url string) []byte {
@@ -267,7 +267,7 @@ func TestHTTPModifierURLNegativeRegexp(t *testing.T) {
 	filters.Set("/some/restricted2")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		urlNegativeRegexp: filters,
+		UrlNegativeRegexp: filters,
 	})
 
 	payload := func(url string) []byte {
@@ -292,7 +292,7 @@ func TestHTTPModifierSetHeader(t *testing.T) {
 	filters.Set("User-Agent:Gor")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		headers: filters,
+		Headers: filters,
 	})
 
 	payload := []byte("POST /post HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
@@ -308,7 +308,7 @@ func TestHTTPModifierSetParam(t *testing.T) {
 	filters.Set("api_key=1")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		params: filters,
+		Params: filters,
 	})
 
 	payload := []byte("POST /post?api_key=1234 HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")

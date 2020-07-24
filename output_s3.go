@@ -38,8 +38,8 @@ func NewS3Output(pathTemplate string, config *FileOutputConfig) *S3Output {
 	o.config = config
 	o.config.onClose = o.onBufferUpdate
 
-	if config.bufferPath == "" {
-		config.bufferPath = "/tmp"
+	if config.BufferPath == "" {
+		config.BufferPath = "/tmp"
 	}
 
 	rnd := rand.Int63()
@@ -52,7 +52,7 @@ func NewS3Output(pathTemplate string, config *FileOutputConfig) *S3Output {
 		bufferName += ".gz"
 	}
 
-	bufferPath := filepath.Join(config.bufferPath, bufferName)
+	bufferPath := filepath.Join(config.BufferPath, bufferName)
 
 	o.buffer = NewFileOutput(bufferPath, config)
 	o.connect()

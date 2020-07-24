@@ -27,7 +27,7 @@ func TestTCPOutput(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
@@ -82,7 +82,7 @@ func BenchmarkTCPOutput(b *testing.B) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -95,7 +95,7 @@ func BenchmarkTCPOutput(b *testing.B) {
 }
 
 func TestStickyDisable(t *testing.T) {
-	tcpOutput := TCPOutput{config: &TCPOutputConfig{sticky: false}}
+	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: false}}
 
 	for i := 0; i < 1000; i++ {
 		index := tcpOutput.getBufferIndex(getTestBytes())
@@ -111,7 +111,7 @@ func TestBufferDistribution(t *testing.T) {
 	percentDistributionErrorRange := 20
 
 	buffer := make([]int, numberOfWorkers)
-	tcpOutput := TCPOutput{config: &TCPOutputConfig{sticky: true}}
+	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: true}}
 	for i := 0; i < numberOfMessages; i++ {
 		buffer[tcpOutput.getBufferIndex(getTestBytes())]++
 	}

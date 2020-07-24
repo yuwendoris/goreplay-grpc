@@ -80,9 +80,9 @@ func main() {
 		profileCPU(*cpuprofile)
 	}
 
-	if Settings.pprof != "" {
+	if Settings.Pprof != "" {
 		go func() {
-			log.Println(http.ListenAndServe(Settings.pprof, nil))
+			log.Println(http.ListenAndServe(Settings.Pprof, nil))
 		}()
 	}
 
@@ -95,16 +95,16 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if Settings.exitAfter > 0 {
-		log.Println("Running gor for a duration of", Settings.exitAfter)
+	if Settings.ExitAfter > 0 {
+		log.Println("Running gor for a duration of", Settings.ExitAfter)
 
-		time.AfterFunc(Settings.exitAfter, func() {
-			log.Println("Stopping gor after", Settings.exitAfter)
+		time.AfterFunc(Settings.ExitAfter, func() {
+			log.Println("Stopping gor after", Settings.ExitAfter)
 			close(closeCh)
 		})
 	}
 
-	emitter.Start(plugins, Settings.middleware)
+	emitter.Start(plugins, Settings.Middleware)
 }
 
 func finalize(plugins *InOutPlugins) {

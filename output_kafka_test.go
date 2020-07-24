@@ -13,10 +13,10 @@ func TestOutputKafkaRAW(t *testing.T) {
 	producer := mocks.NewAsyncProducer(t, config)
 	producer.ExpectInputAndSucceed()
 
-	output := NewKafkaOutput("", &KafkaConfig{
+	output := NewKafkaOutput("", &OutputKafkaConfig{
 		producer: producer,
-		topic:    "test",
-		useJSON:  false,
+		Topic:    "test",
+		UseJSON:  false,
 	})
 
 	output.Write([]byte("1 2 3\nGET / HTTP1.1\r\nHeader: 1\r\n\r\n"))
@@ -36,10 +36,10 @@ func TestOutputKafkaJSON(t *testing.T) {
 	producer := mocks.NewAsyncProducer(t, config)
 	producer.ExpectInputAndSucceed()
 
-	output := NewKafkaOutput("", &KafkaConfig{
+	output := NewKafkaOutput("", &OutputKafkaConfig{
 		producer: producer,
-		topic:    "test",
-		useJSON:  true,
+		Topic:    "test",
+		UseJSON:  true,
 	})
 
 	output.Write([]byte("1 2 3\nGET / HTTP1.1\r\nHeader: 1\r\n\r\n"))

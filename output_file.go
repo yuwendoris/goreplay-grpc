@@ -31,12 +31,12 @@ var dateFileNameFuncs = map[string]func(*FileOutput) string{
 
 // FileOutputConfig ...
 type FileOutputConfig struct {
-	flushInterval     time.Duration
+	FlushInterval     time.Duration `json:"output-file-flush-interval"`
 	sizeLimit         int64
 	outputFileMaxSize int64
-	queueLimit        int64
-	append            bool
-	bufferPath        string
+	QueueLimit        int64  `json:"output-file-queue-limit"`
+	Append            bool   `json:"output-file-append"`
+	BufferPath        string `json:"output-file-buffer"`
 	onClose           func(string)
 }
 
@@ -69,13 +69,13 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 		o.requestPerFile = true
 	}
 
-	if config.flushInterval == 0 {
-		config.flushInterval = 100 * time.Millisecond
+	if config.FlushInterval == 0 {
+		config.FlushInterval = 100 * time.Millisecond
 	}
 
 	go func() {
 		for {
-			time.Sleep(config.flushInterval)
+			time.Sleep(config.FlushInterval)
 			if o.IsClosed() {
 				break
 			}
@@ -150,11 +150,11 @@ func (o *FileOutput) filename() string {
 		path = strings.Replace(path, name, fn(o), -1)
 	}
 
-	if !o.config.append {
+	if !o.config.Append {
 		nextChunk := false
 
 		if o.currentName == "" ||
-			((o.config.queueLimit > 0 && o.queueLength >= o.config.queueLimit) ||
+			((o.config.QueueLimit > 0 && o.queueLength >= o.config.QueueLimit) ||
 				(o.config.sizeLimit > 0 && o.chunkSize >= int(o.config.sizeLimit))) {
 			nextChunk = true
 		}
@@ -233,7 +233,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 	o.totalFileSize += int64(n)
 	o.queueLength++
 
-	if Settings.outputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.outputFileConfig.outputFileMaxSize {
+	if Settings.OutputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.OutputFileConfig.outputFileMaxSize {
 		return n, errors.New("File output reached size limit")
 	}
 

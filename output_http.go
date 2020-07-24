@@ -24,7 +24,7 @@ type httpWorker struct {
 
 func newHTTPWorker(output *HTTPOutput, queue chan []byte) *httpWorker {
 	client := NewHTTPClient(output.address, &HTTPClientConfig{
-		FollowRedirects:    output.config.redirectLimit,
+		FollowRedirects:    output.config.RedirectLimit,
 		Debug:              output.config.Debug,
 		OriginalHost:       output.config.OriginalHost,
 		Timeout:            output.config.Timeout,
@@ -62,28 +62,28 @@ type response struct {
 
 // HTTPOutputConfig struct for holding http output configuration
 type HTTPOutputConfig struct {
-	redirectLimit int
+	RedirectLimit int `json:"output-http-redirect-limit"`
 
-	stats      bool
-	workersMin int
-	workersMax int
-	statsMs    int
-	workers    int
-	queueLen   int
+	Stats      bool `json:"output-http-stats"`
+	WorkersMin int  `json:"output-http-workers-min"`
+	WorkersMax int  `json:"output-http-workers"`
+	StatsMs    int  `json:"output-http-stats-ms"`
+	Workers    int
+	QueueLen   int `json:"output-http-queue-len"`
 
-	elasticSearch string
+	ElasticSearch string `json:"output-http-elasticsearch"`
 
-	Timeout      time.Duration
-	OriginalHost bool
-	BufferSize   int
+	Timeout      time.Duration `json:"output-http-timeout"`
+	OriginalHost bool          `json:"output-http-original-host"`
+	BufferSize   int           `json:"output-http-response-buffer"`
 
-	CompatibilityMode bool
+	CompatibilityMode bool `json:"output-http-compatibility-mode"`
 
 	RequestGroup string
 
-	Debug bool
+	Debug bool `json:"output-http-debug"`
 
-	TrackResponses bool
+	TrackResponses bool `json:"output-http-track-response"`
 }
 
 // HTTPOutput plugin manage pool of workers which send request to replayed server
@@ -123,27 +123,27 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 	o.config = config
 	o.stop = make(chan bool)
 
-	if o.config.stats {
-		o.queueStats = NewGorStat("output_http", o.config.statsMs)
+	if o.config.Stats {
+		o.queueStats = NewGorStat("output_http", o.config.StatsMs)
 	}
 
-	o.queue = make(chan []byte, o.config.queueLen)
-	o.responses = make(chan response, o.config.queueLen)
+	o.queue = make(chan []byte, o.config.QueueLen)
+	o.responses = make(chan response, o.config.QueueLen)
 	o.needWorker = make(chan int, 1)
 
 	// Initial workers count
-	if o.config.workersMax == 0 {
+	if o.config.WorkersMax == 0 {
 		o.needWorker <- initialDynamicWorkers
 	} else {
-		o.needWorker <- o.config.workersMax
+		o.needWorker <- o.config.WorkersMax
 	}
 
-	if o.config.elasticSearch != "" {
+	if o.config.ElasticSearch != "" {
 		o.elasticSearch = new(ESPlugin)
-		o.elasticSearch.Init(o.config.elasticSearch)
+		o.elasticSearch.Init(o.config.ElasticSearch)
 	}
 
-	if Settings.recognizeTCPSessions {
+	if Settings.RecognizeTCPSessions {
 		if !PRO {
 			log.Fatal("Detailed TCP sessions work only with PRO license")
 		}
@@ -200,7 +200,7 @@ func (o *HTTPOutput) sessionWorkerMaster() {
 
 func (o *HTTPOutput) startWorker() {
 	client := NewHTTPClient(o.address, &HTTPClientConfig{
-		FollowRedirects:    o.config.redirectLimit,
+		FollowRedirects:    o.config.RedirectLimit,
 		Debug:              o.config.Debug,
 		OriginalHost:       o.config.OriginalHost,
 		Timeout:            o.config.Timeout,
@@ -216,14 +216,14 @@ func (o *HTTPOutput) startWorker() {
 			o.sendRequest(client, data)
 		case <-time.After(2 * time.Second):
 			// When dynamic scaling enabled workers die after 2s of inactivity
-			if o.config.workersMin == o.config.workersMax {
+			if o.config.WorkersMin == o.config.WorkersMax {
 				continue
 			}
 
 			workersCount := int(atomic.LoadInt64(&o.activeWorkers))
 
 			// At least 1 startWorker should be alive
-			if workersCount != 1 && workersCount > o.config.workersMin {
+			if workersCount != 1 && workersCount > o.config.WorkersMin {
 				atomic.AddInt64(&o.activeWorkers, -1)
 				return
 			}
@@ -245,16 +245,16 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 	case o.queue <- buf:
 	}
 
-	if o.config.stats {
+	if o.config.Stats {
 		o.queueStats.Write(len(o.queue))
 	}
 
-	if !Settings.recognizeTCPSessions && o.config.workersMax != o.config.workersMin {
+	if !Settings.RecognizeTCPSessions && o.config.WorkersMax != o.config.WorkersMin {
 		workersCount := int(atomic.LoadInt64(&o.activeWorkers))
 
 		if len(o.queue) > workersCount {
 			extraWorkersReq := len(o.queue) - workersCount + 1
-			maxWorkersAvailable := o.config.workersMax - workersCount
+			maxWorkersAvailable := o.config.WorkersMax - workersCount
 			if extraWorkersReq > maxWorkersAvailable {
 				extraWorkersReq = maxWorkersAvailable
 			}
@@ -275,7 +275,7 @@ func (o *HTTPOutput) Read(data []byte) (int, error) {
 	case resp = <-o.responses:
 	}
 
-	if Settings.debug {
+	if Settings.Debug {
 		Debug("[OUTPUT-HTTP] Received response:", string(resp.payload))
 	}
 
@@ -289,7 +289,7 @@ func (o *HTTPOutput) Read(data []byte) (int, error) {
 func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	meta := payloadMeta(request)
 
-	if Settings.debug {
+	if Settings.Debug {
 		Debug(meta)
 	}
 

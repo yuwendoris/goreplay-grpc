@@ -27,66 +27,72 @@ func (h *MultiOption) Set(value string) error {
 	return nil
 }
 
+type InputRAWConfig struct {
+	Engine        string        `json:"input-raw-engine"`
+	TrackResponse bool          `json:"input-raw-track-response"`
+	RealIPHeader  string        `json:"input-raw-realip-header"`
+	Expire        time.Duration `json:"input-raw-expire"`
+	Protocol      string        `json:"input-raw-protocol"`
+	BpfFilter     string        `json:"input-raw-bpf-filter"`
+	TimestampType string        `json:"input-raw-timestamp-type"`
+
+	ImmediateMode   bool `json:"input-raw-immediate-mode"`
+	BufferSize      int64
+	OverrideSnapLen bool   `json:"input-raw-override-snaplen"`
+	BufferSizeFlag  string `json:"input-raw-buffer-size"`
+}
+
 // AppSettings is the struct of main configuration
 type AppSettings struct {
-	verbose   bool
-	debug     bool
-	stats     bool
-	exitAfter time.Duration
+	Verbose   bool          `json:"verbose"`
+	Debug     bool          `json:"debug"`
+	Stats     bool          `json:"stats"`
+	ExitAfter time.Duration `json:"exit-after"`
 
-	splitOutput          bool
-	recognizeTCPSessions bool
-	pprof                string
+	SplitOutput          bool   `json:"split-output"`
+	RecognizeTCPSessions bool   `json:"recognize-tcp-sessions"`
+	Pprof                string `json:"http-pprof"`
 
-	inputDummy   MultiOption
-	outputDummy  MultiOption
-	outputStdout bool
-	outputNull   bool
+	InputDummy   MultiOption `json:"input-dummy"`
+	OutputDummy  MultiOption
+	OutputStdout bool `json:"output-stdout"`
+	OutputNull   bool `json:"output-null"`
 
-	inputTCP        MultiOption
-	inputTCPConfig  TCPInputConfig
-	outputTCP       MultiOption
-	outputTCPConfig TCPOutputConfig
-	outputTCPStats  bool
+	InputTCP        MultiOption `json:"input-tcp"`
+	InputTCPConfig  TCPInputConfig
+	OutputTCP       MultiOption `json:"output-tcp"`
+	OutputTCPConfig TCPOutputConfig
+	OutputTCPStats  bool `json:"output-tcp-stats"`
 
-	inputFile        MultiOption
-	inputFileLoop    bool
-	outputFile       MultiOption
-	outputFileConfig FileOutputConfig
+	InputFile        MultiOption `json:"input-file"`
+	InputFileLoop    bool        `json:"input-file-loop"`
+	OutputFile       MultiOption `json:"output-file"`
+	OutputFileConfig FileOutputConfig
 
-	inputRAW                MultiOption
-	inputRAWEngine          string
-	inputRAWTrackResponse   bool
-	inputRAWRealIPHeader    string
-	inputRAWExpire          time.Duration
-	inputRAWProtocol        string
-	inputRAWBpfFilter       string
-	inputRAWTimestampType   string
-	copyBufferSize          int64
-	inputRAWImmediateMode   bool
-	inputRAWBufferSize      int64
-	inputRAWOverrideSnapLen bool
+	InputRAW       MultiOption `json:"input_raw"`
+	InputRAWConfig InputRAWConfig
 
-	inputRAWBufferSizeFlag string
-	outputFileSizeFlag     string
-	outputFileMaxSizeFlag  string
-	copyBufferSizeFlag     string
+	copyBufferSize int64
 
-	middleware string
+	OutputFileSizeFlag    string `json:"output-file-size-limit"`
+	OutputFileMaxSizeFlag string `json:"output-file-max-size-limit"`
+	CopyBufferSizeFlag    string `json:"copy-buffer-size"`
 
-	inputHTTP    MultiOption
-	outputHTTP   MultiOption
-	prettifyHTTP bool
+	Middleware string `json:"middleware"`
 
-	outputHTTPConfig HTTPOutputConfig
+	InputHTTP    MultiOption
+	OutputHTTP   MultiOption `json:"output-http"`
+	PrettifyHTTP bool        `json:"prettify-http"`
 
-	outputBinary       MultiOption
-	outputBinaryConfig BinaryOutputConfig
+	OutputHTTPConfig HTTPOutputConfig
 
-	modifierConfig HTTPModifierConfig
+	OutputBinary       MultiOption `json:"output-binary"`
+	OutputBinaryConfig BinaryOutputConfig
 
-	inputKafkaConfig  KafkaConfig
-	outputKafkaConfig KafkaConfig
+	ModifierConfig HTTPModifierConfig
+
+	InputKafkaConfig  InputKafkaConfig
+	OutputKafkaConfig OutputKafkaConfig
 }
 
 // Settings holds Gor configuration
@@ -101,181 +107,182 @@ func usage() {
 func init() {
 	flag.Usage = usage
 
-	flag.StringVar(&Settings.pprof, "http-pprof", "", "Enable profiling. Starts  http server on specified port, exposing special /debug/pprof endpoint. Example: `:8181`")
-	flag.BoolVar(&Settings.verbose, "verbose", false, "Turn on more verbose output")
-	flag.BoolVar(&Settings.debug, "debug", false, "Turn on debug output, shows all intercepted traffic. Works only when with `verbose` flag")
-	flag.BoolVar(&Settings.stats, "stats", false, "Turn on queue stats output")
+	flag.StringVar(&Settings.Pprof, "http-pprof", "", "Enable profiling. Starts  http server on specified port, exposing special /debug/pprof endpoint. Example: `:8181`")
+	flag.BoolVar(&Settings.Verbose, "verbose", false, "Turn on more verbose output")
+	flag.BoolVar(&Settings.Debug, "debug", false, "Turn on debug output, shows all intercepted traffic. Works only when with `verbose` flag")
+	flag.BoolVar(&Settings.Stats, "stats", false, "Turn on queue stats output")
 
 	if DEMO == "" {
-		flag.DurationVar(&Settings.exitAfter, "exit-after", 0, "exit after specified duration")
+		flag.DurationVar(&Settings.ExitAfter, "exit-after", 0, "exit after specified duration")
 	} else {
-		Settings.exitAfter = 5 * time.Minute
+		Settings.ExitAfter = 5 * time.Minute
 	}
 
-	flag.BoolVar(&Settings.splitOutput, "split-output", false, "By default each output gets same traffic. If set to `true` it splits traffic equally among all outputs.")
+	flag.BoolVar(&Settings.SplitOutput, "split-output", false, "By default each output gets same traffic. If set to `true` it splits traffic equally among all outputs.")
 
-	flag.BoolVar(&Settings.recognizeTCPSessions, "recognize-tcp-sessions", false, "[PRO] If turned on http output will create separate worker for each TCP session. Splitting output will session based as well.")
+	flag.BoolVar(&Settings.RecognizeTCPSessions, "recognize-tcp-sessions", false, "[PRO] If turned on http output will create separate worker for each TCP session. Splitting output will session based as well.")
 
-	flag.Var(&Settings.inputDummy, "input-dummy", "Used for testing outputs. Emits 'Get /' request every 1s")
-	flag.Var(&Settings.outputDummy, "output-dummy", "DEPRECATED: use --output-stdout instead")
+	flag.Var(&Settings.InputDummy, "input-dummy", "Used for testing outputs. Emits 'Get /' request every 1s")
+	flag.Var(&Settings.OutputDummy, "output-dummy", "DEPRECATED: use --output-stdout instead")
 
-	flag.BoolVar(&Settings.outputStdout, "output-stdout", false, "Used for testing inputs. Just prints to console data coming from inputs.")
+	flag.BoolVar(&Settings.OutputStdout, "output-stdout", false, "Used for testing inputs. Just prints to console data coming from inputs.")
 
-	flag.BoolVar(&Settings.outputNull, "output-null", false, "Used for testing inputs. Drops all requests.")
+	flag.BoolVar(&Settings.OutputNull, "output-null", false, "Used for testing inputs. Drops all requests.")
 
-	flag.Var(&Settings.inputTCP, "input-tcp", "Used for internal communication between Gor instances. Example: \n\t# Receive requests from other Gor instances on 28020 port, and redirect output to staging\n\tgor --input-tcp :28020 --output-http staging.com")
-	flag.BoolVar(&Settings.inputTCPConfig.secure, "input-tcp-secure", false, "Turn on TLS security. Do not forget to specify certificate and key files.")
-	flag.StringVar(&Settings.inputTCPConfig.certificatePath, "input-tcp-certificate", "", "Path to PEM encoded certificate file. Used when TLS turned on.")
-	flag.StringVar(&Settings.inputTCPConfig.keyPath, "input-tcp-certificate-key", "", "Path to PEM encoded certificate key file. Used when TLS turned on.")
+	flag.Var(&Settings.InputTCP, "input-tcp", "Used for internal communication between Gor instances. Example: \n\t# Receive requests from other Gor instances on 28020 port, and redirect output to staging\n\tgor --input-tcp :28020 --output-http staging.com")
+	flag.BoolVar(&Settings.InputTCPConfig.Secure, "input-tcp-secure", false, "Turn on TLS security. Do not forget to specify certificate and key files.")
+	flag.StringVar(&Settings.InputTCPConfig.CertificatePath, "input-tcp-certificate", "", "Path to PEM encoded certificate file. Used when TLS turned on.")
+	flag.StringVar(&Settings.InputTCPConfig.KeyPath, "input-tcp-certificate-key", "", "Path to PEM encoded certificate key file. Used when TLS turned on.")
 
-	flag.Var(&Settings.outputTCP, "output-tcp", "Used for internal communication between Gor instances. Example: \n\t# Listen for requests on 80 port and forward them to other Gor instance on 28020 port\n\tgor --input-raw :80 --output-tcp replay.local:28020")
-	flag.BoolVar(&Settings.outputTCPConfig.secure, "output-tcp-secure", false, "Use TLS secure connection. --input-file on another end should have TLS turned on as well.")
-	flag.BoolVar(&Settings.outputTCPConfig.sticky, "output-tcp-sticky", false, "Use Sticky connection. Request/Response with same ID will be sent to the same connection.")
-	flag.BoolVar(&Settings.outputTCPStats, "output-tcp-stats", false, "Report TCP output queue stats to console every 5 seconds.")
+	flag.Var(&Settings.OutputTCP, "output-tcp", "Used for internal communication between Gor instances. Example: \n\t# Listen for requests on 80 port and forward them to other Gor instance on 28020 port\n\tgor --input-raw :80 --output-tcp replay.local:28020")
+	flag.BoolVar(&Settings.OutputTCPConfig.Secure, "output-tcp-secure", false, "Use TLS secure connection. --input-file on another end should have TLS turned on as well.")
+	flag.BoolVar(&Settings.OutputTCPConfig.Sticky, "output-tcp-sticky", false, "Use Sticky connection. Request/Response with same ID will be sent to the same connection.")
+	flag.BoolVar(&Settings.OutputTCPStats, "output-tcp-stats", false, "Report TCP output queue stats to console every 5 seconds.")
 
-	flag.Var(&Settings.inputFile, "input-file", "Read requests from file: \n\tgor --input-file ./requests.gor --output-http staging.com")
-	flag.BoolVar(&Settings.inputFileLoop, "input-file-loop", false, "Loop input files, useful for performance testing.")
+	flag.Var(&Settings.InputFile, "input-file", "Read requests from file: \n\tgor --input-file ./requests.gor --output-http staging.com")
+	flag.BoolVar(&Settings.InputFileLoop, "input-file-loop", false, "Loop input files, useful for performance testing.")
 
-	flag.Var(&Settings.outputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
-	flag.DurationVar(&Settings.outputFileConfig.flushInterval, "output-file-flush-interval", time.Second, "Interval for forcing buffer flush to the file, default: 1s.")
-	flag.BoolVar(&Settings.outputFileConfig.append, "output-file-append", false, "The flushed chunk is appended to existence file or not. ")
-	flag.StringVar(&Settings.outputFileSizeFlag, "output-file-size-limit", "32mb", "Size of each chunk. Default: 32mb")
-	flag.Int64Var(&Settings.outputFileConfig.queueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
-	flag.StringVar(&Settings.outputFileMaxSizeFlag, "output-file-max-size-limit", "1TB", "Max size of output file, Default: 1TB")
+	flag.Var(&Settings.OutputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
+	flag.DurationVar(&Settings.OutputFileConfig.FlushInterval, "output-file-flush-interval", time.Second, "Interval for forcing buffer flush to the file, default: 1s.")
+	flag.BoolVar(&Settings.OutputFileConfig.Append, "output-file-append", false, "The flushed chunk is appended to existence file or not. ")
+	flag.StringVar(&Settings.OutputFileSizeFlag, "output-file-size-limit", "32mb", "Size of each chunk. Default: 32mb")
+	flag.Int64Var(&Settings.OutputFileConfig.QueueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
+	flag.StringVar(&Settings.OutputFileMaxSizeFlag, "output-file-max-size-limit", "1TB", "Max size of output file, Default: 1TB")
 
-	flag.StringVar(&Settings.outputFileConfig.bufferPath, "output-file-buffer", "/tmp", "The path for temporary storing current buffer: \n\tgor --input-raw :80 --output-file s3://mybucket/logs/%Y-%m-%d.gz --output-file-buffer /mnt/logs")
+	flag.StringVar(&Settings.OutputFileConfig.BufferPath, "output-file-buffer", "/tmp", "The path for temporary storing current buffer: \n\tgor --input-raw :80 --output-file s3://mybucket/logs/%Y-%m-%d.gz --output-file-buffer /mnt/logs")
 
-	flag.BoolVar(&Settings.prettifyHTTP, "prettify-http", false, "If enabled, will automatically decode requests and responses with: Content-Encoding: gzip and Transfer-Encoding: chunked. Useful for debugging, in conjuction with --output-stdout")
+	flag.BoolVar(&Settings.PrettifyHTTP, "prettify-http", false, "If enabled, will automatically decode requests and responses with: Content-Encoding: gzip and Transfer-Encoding: chunked. Useful for debugging, in conjuction with --output-stdout")
 
-	flag.Var(&Settings.inputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
+	flag.Var(&Settings.InputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
 
-	flag.BoolVar(&Settings.inputRAWTrackResponse, "input-raw-track-response", false, "If turned on Gor will track responses in addition to requests, and they will be available to middleware and file output.")
+	flag.BoolVar(&Settings.InputRAWConfig.TrackResponse, "input-raw-track-response", false, "If turned on Gor will track responses in addition to requests, and they will be available to middleware and file output.")
 
-	flag.StringVar(&Settings.inputRAWEngine, "input-raw-engine", "libpcap", "Intercept traffic using `libpcap` (default), and `raw_socket`")
+	flag.StringVar(&Settings.InputRAWConfig.Engine, "input-raw-engine", "libpcap", "Intercept traffic using `libpcap` (default), and `raw_socket`")
 
-	flag.StringVar(&Settings.inputRAWProtocol, "input-raw-protocol", "http", "Specify application protocol of intercepted traffic. Possible values: http, binary")
+	flag.StringVar(&Settings.InputRAWConfig.Protocol, "input-raw-protocol", "http", "Specify application protocol of intercepted traffic. Possible values: http, binary")
 
-	flag.StringVar(&Settings.inputRAWRealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
+	flag.StringVar(&Settings.InputRAWConfig.RealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
 
-	flag.DurationVar(&Settings.inputRAWExpire, "input-raw-expire", time.Second*2, "How much it should wait for the last TCP packet, till consider that TCP message complete.")
+	flag.DurationVar(&Settings.InputRAWConfig.Expire, "input-raw-expire", time.Second*2, "How much it should wait for the last TCP packet, till consider that TCP message complete.")
 
-	flag.StringVar(&Settings.inputRAWBpfFilter, "input-raw-bpf-filter", "", "BPF filter to write custom expressions. Can be useful in case of non standard network interfaces like tunneling or SPAN port. Example: --input-raw-bpf-filter 'dst port 80'")
+	flag.StringVar(&Settings.InputRAWConfig.BpfFilter, "input-raw-bpf-filter", "", "BPF filter to write custom expressions. Can be useful in case of non standard network interfaces like tunneling or SPAN port. Example: --input-raw-bpf-filter 'dst port 80'")
 
-	flag.StringVar(&Settings.inputRAWTimestampType, "input-raw-timestamp-type", "", "Possible values: PCAP_TSTAMP_HOST, PCAP_TSTAMP_HOST_LOWPREC, PCAP_TSTAMP_HOST_HIPREC, PCAP_TSTAMP_ADAPTER, PCAP_TSTAMP_ADAPTER_UNSYNCED. This values not supported on all systems, GoReplay will tell you available values of you put wrong one.")
-	flag.StringVar(&Settings.copyBufferSizeFlag, "copy-buffer-size", "5mb", "Set the buffer size for an individual request (default 5MB)")
-	flag.BoolVar(&Settings.inputRAWOverrideSnapLen, "input-raw-override-snaplen", false, "Override the capture snaplen to be 64k. Required for some Virtualized environments")
-	flag.BoolVar(&Settings.inputRAWImmediateMode, "input-raw-immediate-mode", false, "Set pcap interface to immediate mode.")
-	flag.StringVar(&Settings.inputRAWBufferSizeFlag, "input-raw-buffer-size", "0", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
+	flag.StringVar(&Settings.InputRAWConfig.TimestampType, "input-raw-timestamp-type", "", "Possible values: PCAP_TSTAMP_HOST, PCAP_TSTAMP_HOST_LOWPREC, PCAP_TSTAMP_HOST_HIPREC, PCAP_TSTAMP_ADAPTER, PCAP_TSTAMP_ADAPTER_UNSYNCED. This values not supported on all systems, GoReplay will tell you available values of you put wrong one.")
+	flag.StringVar(&Settings.CopyBufferSizeFlag, "copy-buffer-size", "5mb", "Set the buffer size for an individual request (default 5MB)")
+	flag.BoolVar(&Settings.InputRAWConfig.OverrideSnapLen, "input-raw-override-snaplen", false, "Override the capture snaplen to be 64k. Required for some Virtualized environments")
+	flag.BoolVar(&Settings.InputRAWConfig.ImmediateMode, "input-raw-immediate-mode", false, "Set pcap interface to immediate mode.")
+	flag.StringVar(&Settings.InputRAWConfig.BufferSizeFlag, "input-raw-buffer-size", "0", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
 
-	flag.StringVar(&Settings.middleware, "middleware", "", "Used for modifying traffic using external command")
+	flag.StringVar(&Settings.Middleware, "middleware", "", "Used for modifying traffic using external command")
 
 	// flag.Var(&Settings.inputHTTP, "input-http", "Read requests from HTTP, should be explicitly sent from your application:\n\t# Listen for http on 9000\n\tgor --input-http :9000 --output-http staging.com")
 
-	flag.Var(&Settings.outputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
+	flag.Var(&Settings.OutputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
 
 	/* outputHTTPConfig */
-	flag.IntVar(&Settings.outputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
-	flag.BoolVar(&Settings.outputHTTPConfig.CompatibilityMode, "output-http-compatibility-mode", false, "Use standard Go client, instead of built-in implementation. Can be slower, but more compatible.")
+	flag.IntVar(&Settings.OutputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
+	flag.BoolVar(&Settings.OutputHTTPConfig.CompatibilityMode, "output-http-compatibility-mode", false, "Use standard Go client, instead of built-in implementation. Can be slower, but more compatible.")
 
-	flag.IntVar(&Settings.outputHTTPConfig.workersMin, "output-http-workers-min", 0, "Gor uses dynamic worker scaling. Enter a number to set a minimum number of workers. default = 1.")
-	flag.IntVar(&Settings.outputHTTPConfig.workersMax, "output-http-workers", 0, "Gor uses dynamic worker scaling. Enter a number to set a maximum number of workers. default = 0 = unlimited.")
-	flag.IntVar(&Settings.outputHTTPConfig.queueLen, "output-http-queue-len", 1000, "Number of requests that can be queued for output, if all workers are busy. default = 1000")
+	flag.IntVar(&Settings.OutputHTTPConfig.WorkersMin, "output-http-workers-min", 0, "Gor uses dynamic worker scaling. Enter a number to set a minimum number of workers. default = 1.")
+	flag.IntVar(&Settings.OutputHTTPConfig.WorkersMax, "output-http-workers", 0, "Gor uses dynamic worker scaling. Enter a number to set a maximum number of workers. default = 0 = unlimited.")
+	flag.IntVar(&Settings.OutputHTTPConfig.QueueLen, "output-http-queue-len", 1000, "Number of requests that can be queued for output, if all workers are busy. default = 1000")
 
-	flag.IntVar(&Settings.outputHTTPConfig.redirectLimit, "output-http-redirects", 0, "Enable how often redirects should be followed.")
-	flag.DurationVar(&Settings.outputHTTPConfig.Timeout, "output-http-timeout", 5*time.Second, "Specify HTTP request/response timeout. By default 5s. Example: --output-http-timeout 30s")
-	flag.BoolVar(&Settings.outputHTTPConfig.TrackResponses, "output-http-track-response", false, "If turned on, HTTP output responses will be set to all outputs like stdout, file and etc.")
+	flag.IntVar(&Settings.OutputHTTPConfig.RedirectLimit, "output-http-redirect-limit", 0, "Enable how often redirects should be followed.")
+	flag.DurationVar(&Settings.OutputHTTPConfig.Timeout, "output-http-timeout", 5*time.Second, "Specify HTTP request/response timeout. By default 5s. Example: --output-http-timeout 30s")
+	flag.BoolVar(&Settings.OutputHTTPConfig.TrackResponses, "output-http-track-response", false, "If turned on, HTTP output responses will be set to all outputs like stdout, file and etc.")
 
-	flag.BoolVar(&Settings.outputHTTPConfig.stats, "output-http-stats", false, "Report http output queue stats to console every N milliseconds. See output-http-stats-ms")
-	flag.IntVar(&Settings.outputHTTPConfig.statsMs, "output-http-stats-ms", 5000, "Report http output queue stats to console every N milliseconds. default: 5000")
-	flag.BoolVar(&Settings.outputHTTPConfig.OriginalHost, "http-original-host", false, "Normally gor replaces the Host http header with the host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
-	flag.BoolVar(&Settings.outputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
-	flag.StringVar(&Settings.outputHTTPConfig.elasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
+	flag.BoolVar(&Settings.OutputHTTPConfig.Stats, "output-http-stats", false, "Report http output queue stats to console every N milliseconds. See output-http-stats-ms")
+	flag.IntVar(&Settings.OutputHTTPConfig.StatsMs, "output-http-stats-ms", 5000, "Report http output queue stats to console every N milliseconds. default: 5000")
+	flag.BoolVar(&Settings.OutputHTTPConfig.OriginalHost, "output-http-original-host", false, "Normally gor replaces the Host http header with the Host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
+	flag.BoolVar(&Settings.OutputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
+	flag.StringVar(&Settings.OutputHTTPConfig.ElasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
 	/* outputHTTPConfig */
 
-	flag.Var(&Settings.outputBinary, "output-binary", "Forwards incoming binary payloads to given address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --input-raw-protocol binary --output-binary staging.com:80")
+	flag.Var(&Settings.OutputBinary, "output-binary", "Forwards incoming binary payloads to given address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --input-raw-protocol binary --output-binary staging.com:80")
 	/* outputBinaryConfig */
-	flag.IntVar(&Settings.outputBinaryConfig.BufferSize, "output-tcp-response-buffer", 0, "TCP response buffer size, all data after this size will be discarded.")
-	flag.IntVar(&Settings.outputBinaryConfig.workers, "output-binary-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
-	flag.DurationVar(&Settings.outputBinaryConfig.Timeout, "output-binary-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-binary-timeout 30s")
-	flag.BoolVar(&Settings.outputBinaryConfig.TrackResponses, "output-binary-track-response", false, "If turned on, Binary output responses will be set to all outputs like stdout, file and etc.")
+	flag.IntVar(&Settings.OutputBinaryConfig.BufferSize, "output-tcp-response-buffer", 0, "TCP response buffer size, all data after this size will be discarded.")
+	flag.IntVar(&Settings.OutputBinaryConfig.Workers, "output-binary-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
+	flag.DurationVar(&Settings.OutputBinaryConfig.Timeout, "output-binary-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-binary-timeout 30s")
+	flag.BoolVar(&Settings.OutputBinaryConfig.TrackResponses, "output-binary-track-response", false, "If turned on, Binary output responses will be set to all outputs like stdout, file and etc.")
 
-	flag.BoolVar(&Settings.outputBinaryConfig.Debug, "output-binary-debug", false, "Enables binary debug output.")
+	flag.BoolVar(&Settings.OutputBinaryConfig.Debug, "output-binary-debug", false, "Enables binary debug output.")
 	/* outputBinaryConfig */
 
-	flag.StringVar(&Settings.outputKafkaConfig.host, "output-kafka-host", "", "Read request and response stats from Kafka:\n\tgor --input-raw :8080 --output-kafka-host '192.168.0.1:9092,192.168.0.2:9092'")
-	flag.StringVar(&Settings.outputKafkaConfig.topic, "output-kafka-topic", "", "Read request and response stats from Kafka:\n\tgor --input-raw :8080 --output-kafka-topic 'kafka-log'")
-	flag.BoolVar(&Settings.outputKafkaConfig.useJSON, "output-kafka-json-format", false, "If turned on, it will serialize messages from GoReplay text format to JSON.")
+	flag.StringVar(&Settings.OutputKafkaConfig.Host, "output-kafka-host", "", "Read request and response stats from Kafka:\n\tgor --input-raw :8080 --output-kafka-Host '192.168.0.1:9092,192.168.0.2:9092'")
+	flag.StringVar(&Settings.OutputKafkaConfig.Topic, "output-kafka-topic", "", "Read request and response stats from Kafka:\n\tgor --input-raw :8080 --output-kafka-Topic 'kafka-log'")
+	flag.BoolVar(&Settings.OutputKafkaConfig.UseJSON, "output-kafka-json-format", false, "If turned on, it will serialize messages from GoReplay text format to JSON.")
 
-	flag.StringVar(&Settings.inputKafkaConfig.host, "input-kafka-host", "", "Send request and response stats to Kafka:\n\tgor --output-stdout --input-kafka-host '192.168.0.1:9092,192.168.0.2:9092'")
-	flag.StringVar(&Settings.inputKafkaConfig.topic, "input-kafka-topic", "", "Send request and response stats to Kafka:\n\tgor --output-stdout --input-kafka-topic 'kafka-log'")
-	flag.BoolVar(&Settings.inputKafkaConfig.useJSON, "input-kafka-json-format", false, "If turned on, it will assume that messages coming in JSON format rather than  GoReplay text format.")
+	flag.StringVar(&Settings.InputKafkaConfig.Host, "input-kafka-host", "", "Send request and response stats to Kafka:\n\tgor --output-stdout --input-kafka-Host '192.168.0.1:9092,192.168.0.2:9092'")
+	flag.StringVar(&Settings.InputKafkaConfig.Topic, "input-kafka-topic", "", "Send request and response stats to Kafka:\n\tgor --output-stdout --input-kafka-Topic 'kafka-log'")
+	flag.BoolVar(&Settings.InputKafkaConfig.UseJSON, "input-kafka-json-format", false, "If turned on, it will assume that messages coming in JSON format rather than  GoReplay text format.")
 
-	flag.Var(&Settings.modifierConfig.headers, "http-set-header", "Inject additional headers to http reqest:\n\tgor --input-raw :8080 --output-http staging.com --http-set-header 'User-Agent: Gor'")
-	flag.Var(&Settings.modifierConfig.headers, "output-http-header", "WARNING: `--output-http-header` DEPRECATED, use `--http-set-header` instead")
+	flag.Var(&Settings.ModifierConfig.Headers, "http-set-header", "Inject additional headers to http reqest:\n\tgor --input-raw :8080 --output-http staging.com --http-set-header 'User-Agent: Gor'")
+	flag.Var(&Settings.ModifierConfig.Headers, "output-http-header", "WARNING: `--output-http-header` DEPRECATED, use `--http-set-header` instead")
 
-	flag.Var(&Settings.modifierConfig.headerRewrite, "http-rewrite-header", "Rewrite the request header based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-header Host: (.*).example.com,$1.beta.example.com")
+	flag.Var(&Settings.ModifierConfig.HeaderRewrite, "http-rewrite-header", "Rewrite the request header based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-header Host: (.*).example.com,$1.beta.example.com")
 
-	flag.Var(&Settings.modifierConfig.params, "http-set-param", "Set request url param, if param already exists it will be overwritten:\n\tgor --input-raw :8080 --output-http staging.com --http-set-param api_key=1")
+	flag.Var(&Settings.ModifierConfig.Params, "http-set-param", "Set request url param, if param already exists it will be overwritten:\n\tgor --input-raw :8080 --output-http staging.com --http-set-param api_key=1")
 
-	flag.Var(&Settings.modifierConfig.methods, "http-allow-method", "Whitelist of HTTP methods to replay. Anything else will be dropped:\n\tgor --input-raw :8080 --output-http staging.com --http-allow-method GET --http-allow-method OPTIONS")
-	flag.Var(&Settings.modifierConfig.methods, "output-http-method", "WARNING: `--output-http-method` DEPRECATED, use `--http-allow-method` instead")
+	flag.Var(&Settings.ModifierConfig.Methods, "http-allow-method", "Whitelist of HTTP methods to replay. Anything else will be dropped:\n\tgor --input-raw :8080 --output-http staging.com --http-allow-method GET --http-allow-method OPTIONS")
+	flag.Var(&Settings.ModifierConfig.Methods, "output-http-method", "WARNING: `--output-http-method` DEPRECATED, use `--http-allow-method` instead")
 
-	flag.Var(&Settings.modifierConfig.urlRegexp, "http-allow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-url ^www.")
-	flag.Var(&Settings.modifierConfig.urlRegexp, "output-http-url-regexp", "WARNING: `--output-http-url-regexp` DEPRECATED, use `--http-allow-url` instead")
+	flag.Var(&Settings.ModifierConfig.UrlRegexp, "http-allow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-url ^www.")
+	flag.Var(&Settings.ModifierConfig.UrlRegexp, "output-http-url-regexp", "WARNING: `--output-http-url-regexp` DEPRECATED, use `--http-allow-url` instead")
 
-	flag.Var(&Settings.modifierConfig.urlNegativeRegexp, "http-disallow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be forwarded:\n\t gor --input-raw :8080 --output-http staging.com --http-disallow-url ^www.")
+	flag.Var(&Settings.ModifierConfig.UrlNegativeRegexp, "http-disallow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be forwarded:\n\t gor --input-raw :8080 --output-http staging.com --http-disallow-url ^www.")
 
-	flag.Var(&Settings.modifierConfig.urlRewrite, "http-rewrite-url", "Rewrite the request url based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-url /v1/user/([^\\/]+)/ping:/v2/user/$1/ping")
-	flag.Var(&Settings.modifierConfig.urlRewrite, "output-http-rewrite-url", "WARNING: `--output-http-rewrite-url` DEPRECATED, use `--http-rewrite-url` instead")
+	flag.Var(&Settings.ModifierConfig.UrlRewrite, "http-rewrite-url", "Rewrite the request url based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-url /v1/user/([^\\/]+)/ping:/v2/user/$1/ping")
+	flag.Var(&Settings.ModifierConfig.UrlRewrite, "output-http-rewrite-url", "WARNING: `--output-http-rewrite-url` DEPRECATED, use `--http-rewrite-url` instead")
 
-	flag.Var(&Settings.modifierConfig.headerFilters, "http-allow-header", "A regexp to match a specific header against. Requests with non-matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-header api-version:^v1")
-	flag.Var(&Settings.modifierConfig.headerFilters, "output-http-header-filter", "WARNING: `--output-http-header-filter` DEPRECATED, use `--http-allow-header` instead")
+	flag.Var(&Settings.ModifierConfig.HeaderFilters, "http-allow-header", "A regexp to match a specific header against. Requests with non-matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-header api-version:^v1")
+	flag.Var(&Settings.ModifierConfig.HeaderFilters, "output-http-header-filter", "WARNING: `--output-http-header-filter` DEPRECATED, use `--http-allow-header` instead")
 
-	flag.Var(&Settings.modifierConfig.headerNegativeFilters, "http-disallow-header", "A regexp to match a specific header against. Requests with matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-disallow-header \"User-Agent: Replayed by Gor\"")
+	flag.Var(&Settings.ModifierConfig.HeaderNegativeFilters, "http-disallow-header", "A regexp to match a specific header against. Requests with matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-disallow-header \"User-Agent: Replayed by Gor\"")
 
-	flag.Var(&Settings.modifierConfig.headerBasicAuthFilters, "http-basic-auth-filter", "A regexp to match the decoded basic auth string against. Requests with non-matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-basic-auth-filter \"^customer[0-9].*\"")
+	flag.Var(&Settings.ModifierConfig.HeaderBasicAuthFilters, "http-basic-auth-filter", "A regexp to match the decoded basic auth string against. Requests with non-matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-basic-auth-filter \"^customer[0-9].*\"")
 
-	flag.Var(&Settings.modifierConfig.headerHashFilters, "http-header-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific header:\n\t gor --input-raw :8080 --output-http staging.com --http-header-limiter user-id:25%")
+	flag.Var(&Settings.ModifierConfig.HeaderHashFilters, "http-header-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific header:\n\t gor --input-raw :8080 --output-http staging.com --http-header-limiter user-id:25%")
 
-	flag.Var(&Settings.modifierConfig.headerHashFilters, "output-http-header-hash-filter", "WARNING: `output-http-header-hash-filter` DEPRECATED, use `--http-header-hash-limiter` instead")
+	flag.Var(&Settings.ModifierConfig.HeaderHashFilters, "output-http-header-hash-filter", "WARNING: `output-http-header-hash-filter` DEPRECATED, use `--http-header-hash-limiter` instead")
 
-	flag.Var(&Settings.modifierConfig.paramHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
+	flag.Var(&Settings.ModifierConfig.ParamHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
 
 	// default values, using for tests
-	Settings.outputFileConfig.sizeLimit = 33554432
-	Settings.outputFileConfig.outputFileMaxSize = 1099511627776
+	Settings.OutputFileConfig.sizeLimit = 33554432
+	Settings.OutputFileConfig.outputFileMaxSize = 1099511627776
 	Settings.copyBufferSize = 5242880
-	Settings.inputRAWBufferSize = 0
+	Settings.InputRAWConfig.BufferSize = 0
+
 }
 
 func checkSettings() {
-	outputFileSize, err := bufferParser(Settings.outputFileSizeFlag, "32MB")
+	outputFileSize, err := bufferParser(Settings.OutputFileSizeFlag, "32MB")
 	if err != nil {
 		log.Fatalf("output-file-size-limit error: %v\n", err)
 	}
-	Settings.outputFileConfig.sizeLimit = outputFileSize
+	Settings.OutputFileConfig.sizeLimit = outputFileSize
 
-	outputFileMaxSize, err := bufferParser(Settings.outputFileMaxSizeFlag, "1TB")
+	outputFileMaxSize, err := bufferParser(Settings.OutputFileMaxSizeFlag, "1TB")
 	if err != nil {
 		log.Fatalf("output-file-max-size-limit error: %v\n", err)
 	}
-	Settings.outputFileConfig.outputFileMaxSize = outputFileMaxSize
+	Settings.OutputFileConfig.outputFileMaxSize = outputFileMaxSize
 
-	copyBufferSize, err := bufferParser(Settings.copyBufferSizeFlag, "5mb")
+	copyBufferSize, err := bufferParser(Settings.CopyBufferSizeFlag, "5mb")
 	if err != nil {
 		log.Fatalf("copy-buffer-size error: %v\n", err)
 	}
 	Settings.copyBufferSize = copyBufferSize
 
-	inputRAWBufferSize, err := bufferParser(Settings.inputRAWBufferSizeFlag, "0")
+	inputRAWBufferSize, err := bufferParser(Settings.InputRAWConfig.BufferSizeFlag, "0")
 	if err != nil {
 		log.Fatalf("input-raw-buffer-size error: %v\n", err)
 	}
-	Settings.inputRAWBufferSize = inputRAWBufferSize
+	Settings.InputRAWConfig.BufferSize = inputRAWBufferSize
 
 	// libpcap has bug in mac os x. More info: https://github.com/buger/goreplay/issues/730
-	if Settings.inputRAWExpire == time.Second*2 && runtime.GOOS == "darwin" {
-		Settings.inputRAWExpire = time.Second
+	if Settings.InputRAWConfig.Expire == time.Second*2 && runtime.GOOS == "darwin" {
+		Settings.InputRAWConfig.Expire = time.Second
 	}
 }
 
@@ -285,7 +292,7 @@ var pID = os.Getpid()
 
 // Debug take an effect only if --verbose flag specified
 func Debug(args ...interface{}) {
-	if Settings.verbose {
+	if Settings.Verbose {
 		debugMutex.Lock()
 		defer debugMutex.Unlock()
 		now := time.Now()

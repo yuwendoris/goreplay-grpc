@@ -32,7 +32,7 @@ func TestEmitter(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 1000; i++ {
 		wg.Add(1)
@@ -61,7 +61,7 @@ func TestEmitterFiltered(t *testing.T) {
 	plugins.All = append(plugins.All, input, output)
 
 	methods := HTTPMethods{[]byte("GET")}
-	Settings.modifierConfig = HTTPModifierConfig{methods: methods}
+	Settings.ModifierConfig = HTTPModifierConfig{Methods: methods}
 
 	emitter := &emitter{quit: quit}
 	go emitter.Start(plugins, "")
@@ -91,7 +91,7 @@ func TestEmitterFiltered(t *testing.T) {
 	wg.Wait()
 	emitter.Close()
 
-	Settings.modifierConfig = HTTPModifierConfig{}
+	Settings.ModifierConfig = HTTPModifierConfig{}
 }
 
 func TestEmitterSplitRoundRobin(t *testing.T) {
@@ -117,10 +117,10 @@ func TestEmitterSplitRoundRobin(t *testing.T) {
 		Outputs: []io.Writer{output1, output2},
 	}
 
-	Settings.splitOutput = true
+	Settings.SplitOutput = true
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 1000; i++ {
 		wg.Add(1)
@@ -135,7 +135,7 @@ func TestEmitterSplitRoundRobin(t *testing.T) {
 		t.Errorf("Round robin should split traffic equally: %d vs %d", counter1, counter2)
 	}
 
-	Settings.splitOutput = false
+	Settings.SplitOutput = false
 }
 
 func TestEmitterRoundRobin(t *testing.T) {
@@ -162,10 +162,10 @@ func TestEmitterRoundRobin(t *testing.T) {
 	}
 	plugins.All = append(plugins.All, input, output1, output2)
 
-	Settings.splitOutput = true
+	Settings.SplitOutput = true
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 1000; i++ {
 		wg.Add(1)
@@ -179,7 +179,7 @@ func TestEmitterRoundRobin(t *testing.T) {
 		t.Errorf("Round robin should split traffic equally: %d vs %d", counter1, counter2)
 	}
 
-	Settings.splitOutput = false
+	Settings.SplitOutput = false
 }
 
 func TestEmitterSplitSession(t *testing.T) {
@@ -222,11 +222,11 @@ func TestEmitterSplitSession(t *testing.T) {
 		Outputs: []io.Writer{output1, output2},
 	}
 
-	Settings.splitOutput = true
-	Settings.recognizeTCPSessions = true
+	Settings.SplitOutput = true
+	Settings.RecognizeTCPSessions = true
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 1000; i++ {
 		// Keep session but randomize ACK
@@ -247,8 +247,8 @@ func TestEmitterSplitSession(t *testing.T) {
 		t.Errorf("Round robin should split traffic equally: %d vs %d", counter1, counter2)
 	}
 
-	Settings.splitOutput = false
-	Settings.recognizeTCPSessions = false
+	Settings.SplitOutput = false
+	Settings.RecognizeTCPSessions = false
 	emitter.Close()
 }
 
@@ -269,7 +269,7 @@ func BenchmarkEmitter(b *testing.B) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.middleware)
+	go emitter.Start(plugins, Settings.Middleware)
 
 	b.ResetTimer()
 
