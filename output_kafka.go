@@ -24,7 +24,12 @@ const KafkaOutputFrequency = 500
 
 // NewKafkaOutput creates instance of kafka producer client.
 func NewKafkaOutput(address string, config *OutputKafkaConfig) io.Writer {
-	c := sarama.NewConfig()
+	return NewKafkaOutputWithTLS(address, config, nil)
+}
+
+// NewKafkaOutputWithTLS creates instance of kafka producer client.
+func NewKafkaOutputWithTLS(address string, config *OutputKafkaConfig, tlsConfig *KafkaTLSConfig) io.Writer {
+	c := NewKafkaConfig(tlsConfig)
 
 	var producer sarama.AsyncProducer
 

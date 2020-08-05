@@ -151,11 +151,11 @@ func InitPlugins() *InOutPlugins {
 	}
 
 	if Settings.OutputKafkaConfig.Host != "" && Settings.OutputKafkaConfig.Topic != "" {
-		registerPlugin(NewKafkaOutput, "", &Settings.OutputKafkaConfig)
+		registerPlugin(NewKafkaOutput, "", &Settings.OutputKafkaConfig, &Settings.KafkaTLSConfig)
 	}
 
 	if Settings.InputKafkaConfig.Host != "" && Settings.InputKafkaConfig.Topic != "" {
-		registerPlugin(NewKafkaInput, "", &Settings.InputKafkaConfig)
+		registerPlugin(NewKafkaInput, "", &Settings.InputKafkaConfig, &Settings.KafkaTLSConfig)
 	}
 
 	return plugins

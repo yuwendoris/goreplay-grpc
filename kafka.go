@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
+	"log"
 
 	"github.com/Shopify/sarama"
 	"github.com/buger/goreplay/proto"
@@ -27,6 +31,13 @@ type OutputKafkaConfig struct {
 	UseJSON  bool   `json:"output-kafka-json-format"`
 }
 
+// KafkaTLSConfig should contains TLS certificates for connecting to secured Kafka clusters
+type KafkaTLSConfig struct {
+	CACert     string `json:"kafka-tls-ca-cert"`
+	clientCert string `json:"kafka-tls-client-cert"`
+	clientKey  string `json:"kafka-tls-client-key"`
+}
+
 // KafkaMessage should contains catched request information that should be
 // passed as Json to Apache Kafka.
 type KafkaMessage struct {
@@ -37,6 +48,44 @@ type KafkaMessage struct {
 	ReqMethod  string            `json:"Req_Method"`
 	ReqBody    string            `json:"Req_Body,omitempty"`
 	ReqHeaders map[string]string `json:"Req_Headers,omitempty"`
+}
+
+// NewTLSConfig loads TLS certificates
+func NewTLSConfig(clientCertFile, clientKeyFile, caCertFile string) (*tls.Config, error) {
+	tlsConfig := tls.Config{}
+
+	// Load client cert
+	cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+	if err != nil {
+		return &tlsConfig, err
+	}
+	tlsConfig.Certificates = []tls.Certificate{cert}
+
+	// Load CA cert
+	caCert, err := ioutil.ReadFile(caCertFile)
+	if err != nil {
+		return &tlsConfig, err
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+	tlsConfig.RootCAs = caCertPool
+
+	return &tlsConfig, err
+}
+
+// NewKafkaConfig returns Kafka config with or without TLS
+func NewKafkaConfig(tlsConfig *KafkaTLSConfig) *sarama.Config {
+	config := sarama.NewConfig()
+	// Configuration options go here
+	if (tlsConfig != nil) && (tlsConfig.CACert != "") && (tlsConfig.clientCert != "") && (tlsConfig.clientKey != "") {
+		config.Net.TLS.Enable = true
+		tlsConfig, err := NewTLSConfig(tlsConfig.clientCert, tlsConfig.clientKey, tlsConfig.CACert)
+		if err != nil {
+			log.Fatal(err)
+		}
+		config.Net.TLS.Config = tlsConfig
+	}
+	return config
 }
 
 // Dump returns the given request in its HTTP/1.x wire

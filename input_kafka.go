@@ -19,8 +19,12 @@ type KafkaInput struct {
 
 // NewKafkaInput creates instance of kafka consumer client.
 func NewKafkaInput(address string, config *InputKafkaConfig) *KafkaInput {
-	c := sarama.NewConfig()
-	// Configuration options go here
+	return NewKafkaInputWithTLS(address, config, nil)
+}
+
+// NewKafkaInputWithTLS creates instance of kafka consumer client with TLS
+func NewKafkaInputWithTLS(address string, config *InputKafkaConfig, tlsConfig *KafkaTLSConfig) *KafkaInput {
+	c := NewKafkaConfig(tlsConfig)
 
 	var con sarama.Consumer
 
