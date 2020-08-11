@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/buger/goreplay/size"
 )
 
 var dateFileNameFuncs = map[string]func(*FileOutput) string{
@@ -32,11 +34,11 @@ var dateFileNameFuncs = map[string]func(*FileOutput) string{
 // FileOutputConfig ...
 type FileOutputConfig struct {
 	FlushInterval     time.Duration `json:"output-file-flush-interval"`
-	sizeLimit         int64
-	outputFileMaxSize int64
-	QueueLimit        int64  `json:"output-file-queue-limit"`
-	Append            bool   `json:"output-file-append"`
-	BufferPath        string `json:"output-file-buffer"`
+	SizeLimit         size.Size     `json:"output-file-size-limit"`
+	OutputFileMaxSize size.Size     `json:"output-file-max-size-limit"`
+	QueueLimit        int           `json:"output-file-queue-limit"`
+	Append            bool          `json:"output-file-append"`
+	BufferPath        string        `json:"output-file-buffer"`
 	onClose           func(string)
 }
 
@@ -46,14 +48,14 @@ type FileOutput struct {
 	pathTemplate   string
 	currentName    string
 	file           *os.File
-	queueLength    int64
+	QueueLength    int
 	chunkSize      int
 	writer         io.Writer
 	requestPerFile bool
 	currentID      []byte
 	payloadType    []byte
 	closed         bool
-	totalFileSize  int64
+	totalFileSize  size.Size
 
 	config *FileOutputConfig
 }
@@ -154,8 +156,8 @@ func (o *FileOutput) filename() string {
 		nextChunk := false
 
 		if o.currentName == "" ||
-			((o.config.QueueLimit > 0 && o.queueLength >= o.config.QueueLimit) ||
-				(o.config.sizeLimit > 0 && o.chunkSize >= int(o.config.sizeLimit))) {
+			((o.config.QueueLimit > 0 && o.QueueLength >= o.config.QueueLimit) ||
+				(o.config.SizeLimit > 0 && o.chunkSize >= int(o.config.SizeLimit))) {
 			nextChunk = true
 		}
 
@@ -222,7 +224,7 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 			log.Fatal(o, "Cannot open file %q. Error: %s", o.currentName, err)
 		}
 
-		o.queueLength = 0
+		o.QueueLength = 0
 	}
 
 	n, _ = o.writer.Write(data)
@@ -230,10 +232,10 @@ func (o *FileOutput) Write(data []byte) (n int, err error) {
 
 	n += nSeparator
 
-	o.totalFileSize += int64(n)
-	o.queueLength++
+	o.totalFileSize += size.Size(n)
+	o.QueueLength++
 
-	if Settings.OutputFileConfig.outputFileMaxSize > 0 && o.totalFileSize >= Settings.OutputFileConfig.outputFileMaxSize {
+	if Settings.OutputFileConfig.OutputFileMaxSize > 0 && o.totalFileSize >= Settings.OutputFileConfig.OutputFileMaxSize {
 		return n, errors.New("File output reached size limit")
 	}
 

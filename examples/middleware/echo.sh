@@ -8,8 +8,10 @@
 # 
 
 function log {
+    if $GOR_TEST != ""; then # if we are not testing
     # Logging to stderr, because stdout/stdin used for data transfer
     >&2 echo "[DEBUG][ECHO] $1"
+    fi
 }
 
 while read line; do

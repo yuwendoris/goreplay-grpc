@@ -48,7 +48,7 @@ func TestOutputKafkaJSON(t *testing.T) {
 
 	data, _ := resp.Value.Encode()
 
-	if string(data) != `{"Req_URL":"/","Req_Type":"1","Req_ID":"2","Req_Ts":"3","Req_Method":"GET","Req_Headers":{"Header":"1"}}` {
+	if string(data) != `{"Req_URL":"","Req_Type":"1","Req_ID":"2","Req_Ts":"3","Req_Method":"GET"}` {
 		t.Error("Message not properly encoded: ", string(data))
 	}
 }

@@ -49,10 +49,8 @@ func NewKafkaOutput(address string, config *OutputKafkaConfig) io.Writer {
 		producer: producer,
 	}
 
-	if Settings.Verbose {
-		// Start infinite loop for tracking errors for kafka producer.
-		go o.ErrorHandler()
-	}
+	// Start infinite loop for tracking errors for kafka producer.
+	go o.ErrorHandler()
 
 	return o
 }
@@ -60,7 +58,7 @@ func NewKafkaOutput(address string, config *OutputKafkaConfig) io.Writer {
 // ErrorHandler should receive errors
 func (o *KafkaOutput) ErrorHandler() {
 	for err := range o.producer.Errors() {
-		log.Println("Failed to write access log entry:", err)
+		Debug(1, "Failed to write access log entry:", err)
 	}
 }
 
@@ -71,9 +69,8 @@ func (o *KafkaOutput) Write(data []byte) (n int, err error) {
 		message = sarama.StringEncoder(data)
 	} else {
 		headers := make(map[string]string)
-		proto.ParseHeaders([][]byte{data}, func(header []byte, value []byte) bool {
+		proto.ParseHeaders([][]byte{data}, func(header []byte, value []byte) {
 			headers[string(header)] = string(value)
-			return true
 		})
 
 		meta := payloadMeta(data)

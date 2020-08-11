@@ -15,9 +15,9 @@ type HTTPModifier struct {
 
 func NewHTTPModifier(config *HTTPModifierConfig) *HTTPModifier {
 	// Optimization to skip modifier completely if we do not need it
-	if len(config.UrlRegexp) == 0 &&
-		len(config.UrlNegativeRegexp) == 0 &&
-		len(config.UrlRewrite) == 0 &&
+	if len(config.URLRegexp) == 0 &&
+		len(config.URLNegativeRegexp) == 0 &&
+		len(config.URLRewrite) == 0 &&
 		len(config.HeaderRewrite) == 0 &&
 		len(config.HeaderFilters) == 0 &&
 		len(config.HeaderNegativeFilters) == 0 &&
@@ -34,7 +34,7 @@ func NewHTTPModifier(config *HTTPModifierConfig) *HTTPModifier {
 }
 
 func (m *HTTPModifier) Rewrite(payload []byte) (response []byte) {
-	if !proto.IsHTTPPayload(payload) {
+	if !proto.HasRequestTitle(payload) {
 		return payload
 	}
 
@@ -67,12 +67,12 @@ func (m *HTTPModifier) Rewrite(payload []byte) (response []byte) {
 		}
 	}
 
-	if len(m.config.UrlRegexp) > 0 {
+	if len(m.config.URLRegexp) > 0 {
 		path := proto.Path(payload)
 
 		matched := false
 
-		for _, f := range m.config.UrlRegexp {
+		for _, f := range m.config.URLRegexp {
 			if f.regexp.Match(path) {
 				matched = true
 				break
@@ -84,10 +84,10 @@ func (m *HTTPModifier) Rewrite(payload []byte) (response []byte) {
 		}
 	}
 
-	if len(m.config.UrlNegativeRegexp) > 0 {
+	if len(m.config.URLNegativeRegexp) > 0 {
 		path := proto.Path(payload)
 
-		for _, f := range m.config.UrlNegativeRegexp {
+		for _, f := range m.config.URLNegativeRegexp {
 			if f.regexp.Match(path) {
 				return
 			}
@@ -165,10 +165,10 @@ func (m *HTTPModifier) Rewrite(payload []byte) (response []byte) {
 		}
 	}
 
-	if len(m.config.UrlRewrite) > 0 {
+	if len(m.config.URLRewrite) > 0 {
 		path := proto.Path(payload)
 
-		for _, f := range m.config.UrlRewrite {
+		for _, f := range m.config.URLRewrite {
 			if f.src.Match(path) {
 				path = f.src.ReplaceAll(path, f.target)
 				payload = proto.SetPath(payload, path)

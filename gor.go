@@ -5,7 +5,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -33,18 +32,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-var closeCh chan int
-
 func main() {
-	closeCh = make(chan int)
-	// // Don't exit on panic
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		fmt.Printf("PANIC: pkg: %v %s \n", r, debug.Stack())
-	// 	}
-	// }()
-
-	// If not set via env cariable
 	if len(os.Getenv("GOMAXPROCS")) == 0 {
 		runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	}
@@ -57,16 +45,16 @@ func main() {
 		}
 		dir, _ := os.Getwd()
 
-		log.Println("Started example file server for current directory on address ", args[1])
+		Debug(0, "Started example file server for current directory on address ", args[1])
 
 		log.Fatal(http.ListenAndServe(args[1], loggingMiddleware(http.FileServer(http.Dir(dir)))))
 	} else {
 		flag.Parse()
 		checkSettings()
-		plugins = InitPlugins()
+		plugins = NewPlugins()
 	}
 
-	fmt.Println("Version:", VERSION)
+	log.Printf("[PPID %d and PID %d] Version:%s\n", os.Getppid(), os.Getpid(), VERSION)
 
 	if len(plugins.Inputs) == 0 || len(plugins.Outputs) == 0 {
 		log.Fatal("Required at least 1 input and 1 output")
@@ -86,35 +74,29 @@ func main() {
 		}()
 	}
 
+	closeCh := make(chan int)
 	emitter := NewEmitter(closeCh)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		finalize(plugins)
-		os.Exit(1)
-	}()
-
+	go emitter.Start(plugins, Settings.Middleware)
 	if Settings.ExitAfter > 0 {
-		log.Println("Running gor for a duration of", Settings.ExitAfter)
+		log.Printf("Running gor for a duration of %s\n", Settings.ExitAfter)
 
 		time.AfterFunc(Settings.ExitAfter, func() {
-			log.Println("Stopping gor after", Settings.ExitAfter)
+			fmt.Printf("gor run timeout %s\n", Settings.ExitAfter)
 			close(closeCh)
 		})
 	}
-
-	emitter.Start(plugins, Settings.Middleware)
-}
-
-func finalize(plugins *InOutPlugins) {
-	for _, p := range plugins.All {
-		if cp, ok := p.(io.Closer); ok {
-			cp.Close()
-		}
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	exit := 0
+	select {
+	case <-c:
+		exit = 1
+	case <-closeCh:
+		exit = 0
 	}
+	emitter.Close()
+	os.Exit(exit)
 
-	time.Sleep(100 * time.Millisecond)
 }
 
 func profileCPU(cpuprofile string) {
@@ -128,7 +110,6 @@ func profileCPU(cpuprofile string) {
 		time.AfterFunc(30*time.Second, func() {
 			pprof.StopCPUProfile()
 			f.Close()
-			log.Println("Stop profiling after 30 seconds")
 		})
 	}
 }

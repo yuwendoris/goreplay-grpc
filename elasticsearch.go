@@ -99,13 +99,9 @@ func (p *ESPlugin) Init(URI string) {
 	p.done = make(chan bool)
 	p.indexor.Start()
 
-	if Settings.Verbose {
-		// Only start the ErrorHandler goroutine when in verbose mode
-		// no need to burn ressources otherwise
-		go p.ErrorHandler()
-	}
+	go p.ErrorHandler()
 
-	log.Println("Initialized Elasticsearch Plugin")
+	Debug(1, "Initialized Elasticsearch Plugin")
 	return
 }
 
@@ -117,7 +113,7 @@ func (p *ESPlugin) IndexerShutdown() {
 func (p *ESPlugin) ErrorHandler() {
 	for {
 		errBuf := <-p.indexor.ErrorChannel
-		log.Println(errBuf.Err)
+		Debug(1, "[ELASTICSEARCH]", errBuf.Err)
 	}
 }
 
@@ -163,7 +159,7 @@ func (p *ESPlugin) ResponseAnalyze(req, resp []byte, start, stop time.Time) {
 	}
 	j, err := json.Marshal(&esResp)
 	if err != nil {
-		log.Println(err)
+		Debug(0, "[ELASTIC-RESPONSE]", err)
 	} else {
 		p.indexor.Index(p.Index, "RequestResponse", "", "", "", &t, j)
 	}

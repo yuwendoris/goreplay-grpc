@@ -30,3 +30,11 @@ func TestReplace(t *testing.T) {
 		t.Error("Should replace when replacement length bigger")
 	}
 }
+
+func BenchmarkStringtoSlice(b *testing.B) {
+	b.StopTimer()
+	buf := make([]byte, b.N)
+	b.StartTimer()
+	s := new(string)
+	SliceToString(&buf, s)
+}

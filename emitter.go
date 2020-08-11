@@ -10,8 +10,10 @@ import (
 )
 
 type emitter struct {
+	sync.Mutex
 	sync.WaitGroup
-	quit chan int
+	quit    chan int
+	plugins *InOutPlugins
 }
 
 // NewEmitter creates and initializes new `emitter` object.
@@ -23,8 +25,11 @@ func NewEmitter(quit chan int) *emitter {
 
 // Start initialize loop for sending data from inputs to outputs
 func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
-	e.Add(1)
-	defer e.Done()
+	defer e.Wait()
+	if Settings.CopyBufferSize < 1 {
+		Settings.CopyBufferSize = 5 << 20
+	}
+	e.plugins = plugins
 
 	if middlewareCmd != "" {
 		middleware := NewMiddleware(middlewareCmd)
@@ -43,8 +48,8 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 		go func() {
 			defer e.Done()
 			if err := CopyMulty(e.quit, middleware, plugins.Outputs...); err != nil {
-				log.Println("Error during copy: ", err)
-				e.close()
+				Debug(2, "Error during copy: ", err)
+				e.Close()
 			}
 		}()
 		go func() {
@@ -62,8 +67,8 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 			go func(in io.Reader) {
 				defer e.Done()
 				if err := CopyMulty(e.quit, in, plugins.Outputs...); err != nil {
-					log.Println("Error during copy: ", err)
-					e.close()
+					Debug(2, "Error during copy: ", err)
+					e.Close()
 				}
 			}(in)
 		}
@@ -74,20 +79,11 @@ func (e *emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
 				go func(r io.Reader) {
 					defer e.Done()
 					if err := CopyMulty(e.quit, r, plugins.Outputs...); err != nil {
-						log.Println("Error during copy: ", err)
-						e.close()
+						Debug(2, "Error during copy: ", err)
+						e.Close()
 					}
 				}(r)
 			}
-		}
-	}
-
-	for {
-		select {
-		case <-e.quit:
-			finalize(plugins)
-			return
-		case <-time.After(100 * time.Millisecond):
 		}
 	}
 }
@@ -103,12 +99,22 @@ func (e *emitter) close() {
 // Close closes all the goroutine and waits for it to finish.
 func (e *emitter) Close() {
 	e.close()
-	e.Wait()
+	for _, p := range e.plugins.Inputs {
+		if cp, ok := p.(io.Closer); ok {
+			cp.Close()
+		}
+	}
+	for _, p := range e.plugins.Outputs {
+		if cp, ok := p.(io.Closer); ok {
+			cp.Close()
+		}
+	}
+	e.plugins = nil // avoid further accidental usage
 }
 
 // CopyMulty copies from 1 reader to multiple writers
 func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
-	buf := make([]byte, Settings.copyBufferSize)
+	buf := make([]byte, Settings.CopyBufferSize)
 	wIndex := 0
 	modifier := NewHTTPModifier(&Settings.ModifierConfig)
 	filteredRequests := make(map[string]time.Time)
@@ -124,10 +130,6 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 			return nil
 		default:
 		}
-
-		if err == io.EOF || err == ErrorStopped {
-			return nil
-		}
 		if err != nil {
 			return err
 		}
@@ -136,24 +138,16 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 		if nr > 500 {
 			_maxN = 500
 		}
-		if nr > 0 && len(buf) > nr {
+		if nr > 0 {
 			payload := buf[:nr]
 			meta := payloadMeta(payload)
 			if len(meta) < 3 {
-				if Settings.Debug {
-					Debug("[EMITTER] Found malformed record", string(payload[0:_maxN]), nr, "from:", src)
-				}
+				Debug(2, "[EMITTER] Found malformed record", string(payload[0:_maxN]), nr, "from:", src)
 				continue
 			}
 			requestID := string(meta[1])
 
-			if nr >= 5*1024*1024 {
-				log.Println("INFO: Large packet... We received ", len(payload), " bytes from ", src)
-			}
-
-			if Settings.Debug {
-				Debug("[EMITTER] input:", string(payload[0:_maxN]), nr, "from:", src)
-			}
+			Debug(3, "[EMITTER] input:", string(payload[0:_maxN]), nr, "from:", src)
 
 			if modifier != nil {
 				if isRequestPayload(payload) {
@@ -172,9 +166,8 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 						payload = append(payload[:headSize], body...)
 					}
 
-					if Settings.Debug {
-						Debug("[EMITTER] Rewritten input:", len(payload), "First 500 bytes:", string(payload[0:_maxN]))
-					}
+					Debug(3, "[EMITTER] Rewritten input:", len(payload), "First %d bytes:", _maxN, string(payload[0:_maxN]))
+
 				} else {
 					if _, ok := filteredRequests[requestID]; ok {
 						delete(filteredRequests, requestID)
@@ -198,7 +191,7 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 					hasher := fnv.New32a()
 					// First 20 bytes contain tcp session
 					id := payloadID(payload)
-					hasher.Write(id[:20])
+					hasher.Write(id)
 
 					wIndex = int(hasher.Sum32()) % len(writers)
 					writers[wIndex].Write(payload)
@@ -221,8 +214,6 @@ func CopyMulty(stop chan int, src io.Reader, writers ...io.Writer) error {
 					}
 				}
 			}
-		} else if nr > 0 {
-			log.Println("WARN: Packet", nr, "bytes is too large to process. Consider increasing --copy-buffer-size")
 		}
 
 		// Run GC on each 1000 request

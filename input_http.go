@@ -16,11 +16,10 @@ type HTTPInput struct {
 	stop     chan bool // Channel used only to indicate goroutine should shutdown
 }
 
-// NewHTTPInput constructor for HTTPInput. Accepts address with port which he will listen on.
+// NewHTTPInput constructor for HTTPInput. Accepts address with port which it will listen on.
 func NewHTTPInput(address string) (i *HTTPInput) {
 	i = new(HTTPInput)
-	i.data = make(chan []byte, 10000)
-	i.address = address
+	i.data = make(chan []byte, 1000)
 	i.stop = make(chan bool)
 
 	i.listen(address)
@@ -35,15 +34,21 @@ func (i *HTTPInput) Read(data []byte) (int, error) {
 		return 0, ErrorStopped
 	case buf = <-i.data:
 	}
-
 	header := payloadHeader(RequestPayload, uuid(), time.Now().UnixNano(), -1)
 
-	copy(data[0:len(header)], header)
-	copy(data[len(header):], buf)
+	n := copy(data, header)
+	if len(data) > len(header) {
+		n += copy(data[len(header):], buf)
+	}
+	dis := len(header) + len(buf) - n
+	if dis > 0 {
+		Debug(2, "[INPUT-HTTP] discarded", dis, "increase copy buffer size")
+	}
 
-	return len(buf) + len(header), nil
+	return n, nil
 }
 
+// Close closes this plugin
 func (i *HTTPInput) Close() error {
 	close(i.stop)
 	return nil
@@ -51,16 +56,11 @@ func (i *HTTPInput) Close() error {
 
 func (i *HTTPInput) handler(w http.ResponseWriter, r *http.Request) {
 	r.URL.Scheme = "http"
-	r.URL.Host = i.listener.Addr().String()
+	r.URL.Host = i.address
 
 	buf, _ := httputil.DumpRequestOut(r, true)
 	http.Error(w, http.StatusText(200), 200)
-
-	select {
-	case i.data <- buf:
-	default:
-		Debug("[INPUT-HTTP] Dropping requests because output can't process them fast enough")
-	}
+	i.data <- buf
 }
 
 func (i *HTTPInput) listen(address string) {
@@ -74,11 +74,12 @@ func (i *HTTPInput) listen(address string) {
 	if err != nil {
 		log.Fatal("HTTP input listener failure:", err)
 	}
+	i.address = i.listener.Addr().String()
 
 	go func() {
 		err = http.Serve(i.listener, mux)
-		if err != nil {
-			log.Fatal("HTTP input serve failure:", err)
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatal("HTTP input serve failure ", err)
 		}
 	}()
 }

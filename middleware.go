@@ -12,6 +12,7 @@ import (
 	"sync"
 )
 
+// Middleware represents a middleware object
 type Middleware struct {
 	command string
 
@@ -25,6 +26,7 @@ type Middleware struct {
 	stop chan bool // Channel used only to indicate goroutine should shutdown
 }
 
+// NewMiddleware returns new middleware
 func NewMiddleware(command string) *Middleware {
 	m := new(Middleware)
 	m.command = command
@@ -58,8 +60,9 @@ func NewMiddleware(command string) *Middleware {
 	return m
 }
 
+// ReadFrom start a worker to read from this plugin
 func (m *Middleware) ReadFrom(plugin io.Reader) {
-	Debug("[MIDDLEWARE-MASTER] Starting reading from", plugin)
+	Debug(2, "[MIDDLEWARE-MASTER] Starting reading from", plugin)
 	go m.copy(m.Stdin, plugin)
 }
 
@@ -96,9 +99,7 @@ func (m *Middleware) copy(to io.Writer, from io.Reader) {
 		to.Write(dst[0 : nr*2+1])
 		m.mu.Unlock()
 
-		if Settings.Debug {
-			Debug("[MIDDLEWARE-MASTER] Sending:", string(buf[0:nr]), "From:", from)
-		}
+		Debug(3, "[MIDDLEWARE-MASTER] Sending:", string(buf[0:nr]), "From:", from)
 	}
 }
 
@@ -121,9 +122,7 @@ func (m *Middleware) read(from io.Reader) {
 			fmt.Fprintln(os.Stderr, "Failed to decode input payload", err, len(line), string(line[:len(line)-1]))
 		}
 
-		if Settings.Debug {
-			Debug("[MIDDLEWARE-MASTER] Received:", string(buf))
-		}
+		Debug(3, "[MIDDLEWARE-MASTER] Received:", string(buf))
 
 		select {
 		case <-m.stop:
@@ -143,14 +142,15 @@ func (m *Middleware) Read(data []byte) (int, error) {
 	case buf = <-m.data:
 	}
 
-	copy(data, buf)
-	return len(buf), nil
+	n := copy(data, buf)
+	return n, nil
 }
 
 func (m *Middleware) String() string {
 	return fmt.Sprintf("Modifying traffic using '%s' command", m.command)
 }
 
+// Close closes this plugin
 func (m *Middleware) Close() error {
 	close(m.stop)
 	return nil

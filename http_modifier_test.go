@@ -121,7 +121,7 @@ func TestHTTPHeaderBasicAuthFilters(t *testing.T) {
 func TestHTTPModifierURLRewrite(t *testing.T) {
 	var url, newURL []byte
 
-	rewrites := UrlRewriteMap{}
+	rewrites := URLRewriteMap{}
 
 	payload := func(url []byte) []byte {
 		return []byte("POST " + string(url) + " HTTP/1.1\r\nContent-Length: 7\r\nHost: www.w3.org\r\n\r\na=1&b=2")
@@ -133,7 +133,7 @@ func TestHTTPModifierURLRewrite(t *testing.T) {
 	}
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		UrlRewrite: rewrites,
+		URLRewrite: rewrites,
 	})
 
 	url = []byte("/v1/user/joe/ping")
@@ -236,12 +236,12 @@ func TestHTTPModifierHeaders(t *testing.T) {
 }
 
 func TestHTTPModifierURLRegexp(t *testing.T) {
-	filters := HTTPUrlRegexp{}
+	filters := HTTPURLRegexp{}
 	filters.Set("/v1/app")
 	filters.Set("/v1/api")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		UrlRegexp: filters,
+		URLRegexp: filters,
 	})
 
 	payload := func(url string) []byte {
@@ -262,12 +262,12 @@ func TestHTTPModifierURLRegexp(t *testing.T) {
 }
 
 func TestHTTPModifierURLNegativeRegexp(t *testing.T) {
-	filters := HTTPUrlRegexp{}
+	filters := HTTPURLRegexp{}
 	filters.Set("/restricted1")
 	filters.Set("/some/restricted2")
 
 	modifier := NewHTTPModifier(&HTTPModifierConfig{
-		UrlNegativeRegexp: filters,
+		URLNegativeRegexp: filters,
 	})
 
 	payload := func(url string) []byte {

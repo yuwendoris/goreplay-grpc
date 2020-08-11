@@ -86,7 +86,6 @@ func TestPercentLimiter1(t *testing.T) {
 	}
 
 	wg.Wait()
-	emitter.Close()
 }
 
 // Should not limit at all
@@ -114,5 +113,4 @@ func TestPercentLimiter2(t *testing.T) {
 	}
 
 	wg.Wait()
-	emitter.Close()
 }
