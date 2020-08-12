@@ -4,13 +4,15 @@ import (
 	"io"
 	"sync/atomic"
 	"time"
+
+	"github.com/buger/goreplay/size"
 )
 
 // BinaryOutputConfig struct for holding binary output configuration
 type BinaryOutputConfig struct {
 	Workers        int           `json:"output-binary-workers"`
 	Timeout        time.Duration `json:"output-binary-timeout"`
-	BufferSize     int           `json:"output-tcp-response-buffer"`
+	BufferSize     size.Size     `json:"output-tcp-response-buffer"`
 	Debug          bool          `json:"output-binary-debug"`
 	TrackResponses bool          `json:"output-binary-track-response"`
 }
@@ -78,7 +80,7 @@ func (o *BinaryOutput) startWorker() {
 	client := NewTCPClient(o.address, &TCPClientConfig{
 		Debug:              o.config.Debug,
 		Timeout:            o.config.Timeout,
-		ResponseBufferSize: o.config.BufferSize,
+		ResponseBufferSize: int(o.config.BufferSize),
 	})
 
 	deathCount := 0
@@ -135,7 +137,7 @@ func (o *BinaryOutput) Write(data []byte) (n int, err error) {
 func (o *BinaryOutput) Read(data []byte) (int, error) {
 	resp := <-o.responses
 
-	Debug("[OUTPUT-TCP] Received response:", string(resp.payload))
+	Debug(2, "[OUTPUT-TCP] Received response:", string(resp.payload))
 
 	header := payloadHeader(ReplayedResponsePayload, resp.uuid, resp.startedAt, resp.roundTripTime)
 	copy(data[0:len(header)], header)
@@ -163,7 +165,7 @@ func (o *BinaryOutput) sendRequest(client *TCPClient, request []byte) {
 	stop := time.Now()
 
 	if err != nil {
-		Debug("Request error:", err)
+		Debug(1, "Request error:", err)
 	}
 
 	if o.config.TrackResponses {

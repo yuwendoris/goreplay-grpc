@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	_ "net/http/httputil"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -67,13 +66,7 @@ func TestHTTPOutput(t *testing.T) {
 	}
 
 	wg.Wait()
-	close(quit)
-
-	activeWorkers := atomic.LoadInt64(&http_output.(*HTTPOutput).activeWorkers)
-
-	if activeWorkers < 50 {
-		t.Error("Should create workers for each request", activeWorkers)
-	}
+	emitter.Close()
 
 	Settings.ModifierConfig = HTTPModifierConfig{}
 }
@@ -183,10 +176,6 @@ func TestHTTPOutputSessions(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	if output.(*HTTPOutput).activeWorkers != 2 {
-		t.Error("Should have only 2 workers", output.(*HTTPOutput).activeWorkers)
-	}
 
 	emitter.Close()
 

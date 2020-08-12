@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -183,14 +183,8 @@ func TestEmitterRoundRobin(t *testing.T) {
 }
 
 func TestEmitterSplitSession(t *testing.T) {
-	wg1 := new(sync.WaitGroup)
-	wg2 := new(sync.WaitGroup)
-	wg1.Add(1000)
-	wg2.Add(1000)
-
-	// Base uuids, only 1 letter changed
-	uuid1 := []byte("1234567890123456789a0000")
-	uuid2 := []byte("1234567890123456789d0000")
+	wg := new(sync.WaitGroup)
+	wg.Add(200)
 
 	quit := make(chan int)
 
@@ -200,21 +194,17 @@ func TestEmitterSplitSession(t *testing.T) {
 	var counter1, counter2 int32
 
 	output1 := NewTestOutput(func(data []byte) {
-		atomic.AddInt32(&counter1, 1)
-		if !bytes.Equal(uuid1[:20], payloadID(data)[:20]) {
-			t.Errorf("All tcp sessions should have same id")
+		if payloadID(data)[0] == 'a' {
+			atomic.AddInt32(&counter1, 1)
 		}
-
-		wg1.Done()
+		wg.Done()
 	})
 
 	output2 := NewTestOutput(func(data []byte) {
-		atomic.AddInt32(&counter2, 1)
-		if !bytes.Equal(uuid2[:20], payloadID(data)[:20]) {
-			t.Errorf("All tcp sessions should have same id")
+		if payloadID(data)[0] == 'b' {
+			atomic.AddInt32(&counter2, 1)
 		}
-
-		wg2.Done()
+		wg.Done()
 	})
 
 	plugins := &InOutPlugins{
@@ -228,22 +218,20 @@ func TestEmitterSplitSession(t *testing.T) {
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.Middleware)
 
-	for i := 0; i < 1000; i++ {
-		// Keep session but randomize ACK
-		copy(uuid1[20:], randByte(4))
-		input.EmitBytes([]byte("1 " + string(uuid1) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
+	for i := 0; i < 200; i++ {
+		// Keep session but randomize
+		id := make([]byte, 20)
+		if i&1 == 0 { // for recognizeTCPSessions one should be odd and other will be even number
+			id[0] = 'a'
+		} else {
+			id[0] = 'b'
+		}
+		input.EmitBytes([]byte(fmt.Sprintf("1 %s 1 1\nGET / HTTP/1.1\r\n\r\n", id[:20])))
 	}
 
-	for i := 0; i < 1000; i++ {
-		// Keep session but randomize ACK
-		copy(uuid2[20:], randByte(4))
-		input.EmitBytes([]byte("1 " + string(uuid2) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
-	}
+	wg.Wait()
 
-	wg1.Wait()
-	wg2.Wait()
-
-	if counter1 != 1000 || counter2 != 1000 {
+	if counter1 != counter2 {
 		t.Errorf("Round robin should split traffic equally: %d vs %d", counter1, counter2)
 	}
 

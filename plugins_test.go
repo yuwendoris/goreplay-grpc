@@ -10,7 +10,7 @@ func TestPluginsRegistration(t *testing.T) {
 	Settings.OutputHTTP = MultiOption{"www.example.com|10"}
 	Settings.InputFile = MultiOption{"/dev/null"}
 
-	plugins := InitPlugins()
+	plugins := NewPlugins()
 
 	if len(plugins.Inputs) != 2 {
 		t.Errorf("Should be 2 inputs %d", len(plugins.Inputs))

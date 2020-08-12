@@ -10,9 +10,9 @@ import (
 
 // HTTPModifierConfig holds configuration options for built-in traffic modifier
 type HTTPModifierConfig struct {
-	UrlNegativeRegexp      HTTPUrlRegexp              `json:"http-disallow-url"`
-	UrlRegexp              HTTPUrlRegexp              `json:"http-allow-url"`
-	UrlRewrite             UrlRewriteMap              `json:"http-rewrite-url"`
+	URLNegativeRegexp      HTTPURLRegexp              `json:"http-disallow-url"`
+	URLRegexp              HTTPURLRegexp              `json:"http-allow-url"`
+	URLRewrite             URLRewriteMap              `json:"http-rewrite-url"`
 	HeaderRewrite          HeaderRewriteMap           `json:"http-rewrite-header"`
 	HeaderFilters          HTTPHeaderFilters          `json:"http-allow-header"`
 	HeaderNegativeFilters  HTTPHeaderFilters          `json:"http-disallow-header"`
@@ -204,13 +204,13 @@ type urlRewrite struct {
 	target []byte
 }
 
-type UrlRewriteMap []urlRewrite
+type URLRewriteMap []urlRewrite
 
-func (r *UrlRewriteMap) String() string {
+func (r *URLRewriteMap) String() string {
 	return fmt.Sprint(*r)
 }
 
-func (r *UrlRewriteMap) Set(value string) error {
+func (r *URLRewriteMap) Set(value string) error {
 	valArr := strings.SplitN(value, ":", 2)
 	if len(valArr) < 2 {
 		return errors.New("need both src and target, colon-delimited (ex. /a:/b)")
@@ -266,13 +266,13 @@ type urlRegexp struct {
 	regexp *regexp.Regexp
 }
 
-type HTTPUrlRegexp []urlRegexp
+type HTTPURLRegexp []urlRegexp
 
-func (r *HTTPUrlRegexp) String() string {
+func (r *HTTPURLRegexp) String() string {
 	return fmt.Sprint(*r)
 }
 
-func (r *HTTPUrlRegexp) Set(value string) error {
+func (r *HTTPURLRegexp) Set(value string) error {
 	regexp, err := regexp.Compile(value)
 
 	*r = append(*r, urlRegexp{regexp: regexp})

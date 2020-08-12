@@ -65,10 +65,7 @@ func NewKafkaInputWithTLS(address string, config *InputKafkaConfig, tlsConfig *K
 			}
 		}(consumer)
 
-		if Settings.Verbose {
-			// Start infinite loop for tracking errors for kafka producer.
-			go i.ErrorHandler(consumer)
-		}
+		go i.ErrorHandler(consumer)
 
 		i.consumers[index] = consumer
 	}
@@ -79,7 +76,7 @@ func NewKafkaInputWithTLS(address string, config *InputKafkaConfig, tlsConfig *K
 // ErrorHandler should receive errors
 func (i *KafkaInput) ErrorHandler(consumer sarama.PartitionConsumer) {
 	for err := range consumer.Errors() {
-		log.Println("Failed to read access log entry:", err)
+		Debug(1, "Failed to read access log entry:", err)
 	}
 }
 
@@ -96,7 +93,7 @@ func (i *KafkaInput) Read(data []byte) (int, error) {
 
 	buf, err := kafkaMessage.Dump()
 	if err != nil {
-		log.Println("Failed to decode access log entry:", err)
+		Debug(1, "Failed to decode access log entry:", err)
 		return 0, err
 	}
 

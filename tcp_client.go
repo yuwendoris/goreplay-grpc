@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/tls"
 	"io"
-	"log"
 	"net"
 	"runtime/debug"
 	"syscall"
@@ -71,7 +70,7 @@ func (c *TCPClient) Disconnect() {
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
-		Debug("[TCPClient] Disconnected: ", c.baseURL)
+		Debug(1, "[TCPClient] Disconnected: ", c.baseURL)
 	}
 }
 
@@ -85,12 +84,10 @@ func (c *TCPClient) isAlive() bool {
 	if err == nil {
 		return true
 	} else if err == io.EOF {
-		if c.config.Debug {
-			Debug("[TCPClient] connection closed, reconnecting")
-		}
+		Debug(1, "[TCPClient] connection closed, reconnecting")
 		return false
 	} else if err == syscall.EPIPE {
-		Debug("Detected broken pipe.", err)
+		Debug(1, "Detected broken pipe.", err)
 		return false
 	}
 
@@ -102,19 +99,19 @@ func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 	// Don't exit on panic
 	defer func() {
 		if r := recover(); r != nil {
-			Debug("[TCPClient]", r, string(data))
+			Debug(1, "[TCPClient]", r, string(data))
 
 			if _, ok := r.(error); !ok {
-				log.Println("[TCPClient] Failed to send request: ", string(data))
-				log.Println("PANIC: pkg:", r, debug.Stack())
+				Debug(1, "[TCPClient] Failed to send request: ", string(data))
+				Debug(1, "PANIC: pkg:", r, debug.Stack())
 			}
 		}
 	}()
 
 	if c.conn == nil || !c.isAlive() {
-		Debug("[TCPClient] Connecting:", c.baseURL)
+		Debug(1, "[TCPClient] Connecting:", c.baseURL)
 		if err = c.Connect(); err != nil {
-			log.Println("[TCPClient] Connection error:", err)
+			Debug(1, "[TCPClient] Connection error:", err)
 			return
 		}
 	}
@@ -124,11 +121,11 @@ func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 	c.conn.SetWriteDeadline(timeout)
 
 	if c.config.Debug {
-		Debug("[TCPClient] Sending:", string(data))
+		Debug(1, "[TCPClient] Sending:", string(data))
 	}
 
 	if _, err = c.conn.Write(data); err != nil {
-		Debug("[TCPClient] Write error:", err, c.baseURL)
+		Debug(1, "[TCPClient] Write error:", err, c.baseURL)
 		return
 	}
 
@@ -159,7 +156,7 @@ func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 			if err == io.EOF {
 				break
 			} else if err != nil {
-				Debug("[TCPClient] Read the whole body error:", err, c.baseURL)
+				Debug(1, "[TCPClient] Read the whole body error:", err, c.baseURL)
 				break
 			}
 
@@ -167,7 +164,7 @@ func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 		}
 
 		if readBytes >= maxResponseSize {
-			Debug("[TCPClient] Body is more than the max size", maxResponseSize,
+			Debug(1, "[TCPClient] Body is more than the max size", maxResponseSize,
 				c.baseURL)
 			break
 		}
@@ -177,7 +174,7 @@ func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 	}
 
 	if err != nil {
-		Debug("[TCPClient] Response read error", err, c.conn, readBytes)
+		Debug(1, "[TCPClient] Response read error", err, c.conn, readBytes)
 		return
 	}
 
@@ -189,7 +186,7 @@ func (c *TCPClient) Send(data []byte) (response []byte, err error) {
 	copy(payload, c.respBuf[:readBytes])
 
 	if c.config.Debug {
-		Debug("[TCPClient] Received:", string(payload))
+		Debug(1, "[TCPClient] Received:", string(payload))
 	}
 
 	return payload, err

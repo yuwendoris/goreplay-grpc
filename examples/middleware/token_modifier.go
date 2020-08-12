@@ -115,6 +115,8 @@ func encode(buf []byte) []byte {
 }
 
 func Debug(args ...interface{}) {
-	fmt.Fprint(os.Stderr, "[DEBUG][TOKEN-MOD] ")
-	fmt.Fprintln(os.Stderr, args...)
+	if os.Getenv("GOR_TEST") != "" { // if we are not testing
+		fmt.Fprint(os.Stderr, "[DEBUG][TOKEN-MOD] ")
+		fmt.Fprintln(os.Stderr, args...)
+	}
 }

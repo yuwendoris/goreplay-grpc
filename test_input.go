@@ -1,10 +1,9 @@
 package main
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
+	"math/rand"
 	"time"
 )
 
@@ -40,16 +39,18 @@ func (i *TestInput) Read(data []byte) (int, error) {
 		}
 
 		return len(buf) + len(header), nil
-	case <-time.After(10 * time.Second):
-		return 0, fmt.Errorf("timed out waiting for read")
+	case <-i.stop:
+		return 0, ErrorStopped
 	}
 }
 
+// Close closes this plugin
 func (i *TestInput) Close() error {
 	close(i.stop)
 	return nil
 }
 
+// EmitBytes sends data
 func (i *TestInput) EmitBytes(data []byte) {
 	i.data <- data
 }
@@ -77,8 +78,7 @@ func (i *TestInput) EmitLargePOST() {
 
 	rs := base64.URLEncoding.EncodeToString(rb)
 
-	i.data <- []byte("POST / HTTP/1.1\nHost: www.w3.org\nContent-Length:5242880\r\n\r\n" + rs)
-	Debug("Sent large POST")
+	i.data <- []byte("POST / HTTP/1.1\r\nHost: www.w3.org\nContent-Length:5242880\r\n\r\n" + rs)
 }
 
 // EmitSizedPOST emit a POST with a payload set to a supplied size
@@ -88,13 +88,12 @@ func (i *TestInput) EmitSizedPOST(payloadSize int) {
 
 	rs := base64.URLEncoding.EncodeToString(rb)
 
-	i.data <- []byte("POST / HTTP/1.1\nHost: www.w3.org\nContent-Length:5242880\r\n\r\n" + rs)
-	Debug("Sent large POST")
+	i.data <- []byte("POST / HTTP/1.1\r\nHost: www.w3.org\nContent-Length:5242880\r\n\r\n" + rs)
 }
 
 // EmitOPTIONS emits OPTIONS request, similar to GET
 func (i *TestInput) EmitOPTIONS() {
-	i.data <- []byte("OPTIONS / HTTP/1.1\nHost: www.w3.org\r\n\r\n")
+	i.data <- []byte("OPTIONS / HTTP/1.1\r\nHost: www.w3.org\r\n\r\n")
 }
 
 func (i *TestInput) String() string {

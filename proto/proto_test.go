@@ -2,8 +2,10 @@ package proto
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestHeader(t *testing.T) {
@@ -36,13 +38,6 @@ func TestHeader(t *testing.T) {
 
 	if val = Header(payload, []byte("Cookie")); len(val) > 0 {
 		t.Error("Should return empty value")
-	}
-
-	// Wrong delimeter
-	payload = []byte("GET /p HTTP/1.1\r\nCookie: 123\nHost: www.w3.org\r\n\r\n")
-
-	if val = Header(payload, []byte("Cookie")); !bytes.Equal(val, []byte("123")) {
-		t.Error("Should handle wrong header delimeter")
 	}
 
 	// Header not found
@@ -129,9 +124,8 @@ func TestParseHeaders(t *testing.T) {
 
 	headers := make(map[string]string)
 
-	ParseHeaders(payload, func(header []byte, value []byte) bool {
+	ParseHeaders(payload, func(header []byte, value []byte) {
 		headers[string(header)] = string(value)
-		return true
 	})
 
 	expected := map[string]string{
@@ -152,8 +146,7 @@ func TestFuzzCrashers(t *testing.T) {
 	}
 
 	for _, f := range crashers {
-		ParseHeaders([][]byte{[]byte(f)}, func(header []byte, value []byte) bool {
-			return true
+		ParseHeaders([][]byte{[]byte(f)}, func(header []byte, value []byte) {
 		})
 	}
 }
@@ -165,9 +158,8 @@ func TestParseHeadersWithComplexUserAgent(t *testing.T) {
 
 	headers := make(map[string]string)
 
-	ParseHeaders(payload, func(header []byte, value []byte) bool {
+	ParseHeaders(payload, func(header []byte, value []byte) {
 		headers[string(header)] = string(value)
-		return true
 	})
 
 	expected := map[string]string{
@@ -186,9 +178,8 @@ func TestParseHeadersWithOrigin(t *testing.T) {
 
 	headers := make(map[string]string)
 
-	ParseHeaders(payload, func(header []byte, value []byte) bool {
+	ParseHeaders(payload, func(header []byte, value []byte) {
 		headers[string(header)] = string(value)
-		return true
 	})
 
 	expected := map[string]string{
@@ -210,25 +201,6 @@ func TestParseHeadersWithOrigin(t *testing.T) {
 	}
 }
 
-func TestHeaderEquals(t *testing.T) {
-	tests := []struct {
-		h1     string
-		h2     string
-		equals bool
-	}{
-		{"Content-Length", "content-length", true},
-		{"content-length", "Content-Length", true},
-		{"content-Pength", "Content-Length", false},
-		{"Host", "Content-Length", false},
-	}
-
-	for _, tc := range tests {
-		if HeadersEqual([]byte(tc.h1), []byte(tc.h2)) != tc.equals {
-			t.Error(tc)
-		}
-	}
-}
-
 func TestPath(t *testing.T) {
 	var path, payload []byte
 
@@ -240,20 +212,20 @@ func TestPath(t *testing.T) {
 
 	payload = []byte("GET /get\r\n\r\nHost: www.w3.org\r\n\r\n")
 
-	if path = Path(payload); !bytes.Equal(path, []byte("/get")) {
-		t.Error("Should find path", string(path))
+	if path = Path(payload); !bytes.Equal(path, nil) {
+		t.Error("1Should not find path", string(path))
 	}
 
 	payload = []byte("GET /get\n")
 
-	if path = Path(payload); !bytes.Equal(path, []byte("/get")) {
-		t.Error("Should find path", string(path))
+	if path = Path(payload); !bytes.Equal(path, nil) {
+		t.Error("2Should not find path", string(path))
 	}
 
 	payload = []byte("GET /get")
 
-	if path = Path(payload); !bytes.Equal(path, []byte("/get")) {
-		t.Error("Should find path", string(path))
+	if path = Path(payload); !bytes.Equal(path, nil) {
+		t.Error("3Should not find path", string(path))
 	}
 }
 
@@ -266,6 +238,7 @@ func TestSetPath(t *testing.T) {
 	if payload = SetPath(payload, []byte("/new_path")); !bytes.Equal(payload, payloadAfter) {
 		t.Error("Should replace path", string(payload))
 	}
+
 }
 
 func TestPathParam(t *testing.T) {
@@ -332,4 +305,177 @@ func TestSetHostHTTP10(t *testing.T) {
 	if payload = SetHost(payload, []byte("http://new.com"), []byte("new.com")); !bytes.Equal(payload, payloadAfter) {
 		t.Error("Should replace host", string(payload))
 	}
+
+	payload = []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\nHost: example.com\r\n\r\na=1&b=2")
+	payloadAfter = []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\nHost: new.com\r\n\r\na=1&b=2")
+
+	if payload = SetHost(payload, nil, []byte("new.com")); !bytes.Equal(payload, payloadAfter) {
+		t.Error("Should replace host", string(payload))
+	}
+
+	payload = []byte("POST /post HTTP/1.0\r\nContent-Length: 7\r\n\r\na=1&b=2")
+
+	if payload = SetHost(payload, nil, []byte("new.com")); !bytes.Equal(payload, payload) {
+		t.Error("Should replace host", string(payload))
+	}
+}
+
+func TestHasResponseTitle(t *testing.T) {
+	var m = map[string]bool{
+		"HTTP":                      false,
+		"":                          false,
+		"HTTP/1.1 100 Continue":     false,
+		"HTTP/1.1 100 Continue\r\n": true,
+		"HTTP/1.1  \r\n":            false,
+		"HTTP/4.0 100Continue\r\n":  false,
+		"HTTP/4.0 100 Continue\r\n": false,
+	}
+	for k, v := range m {
+		if HasResponseTitle([]byte(k)) != v {
+			t.Errorf("%q should yield %v", k, v)
+			break
+		}
+	}
+}
+
+func TestHasRequestTitle(t *testing.T) {
+	var m = map[string]bool{
+		"POST /post HTTP/1.0\r\n": true,
+		"":                        false,
+		"POST /post HTTP/1.\r\n":  false,
+		"POS /post HTTP/1.1\r\n":  false,
+		"GET / HTTP/1.1\r\n":      true,
+		"GET / HTTP/1.1\r":        false,
+		"GET / HTTP/1.400\r\n":    false,
+	}
+	for k, v := range m {
+		if HasRequestTitle([]byte(k)) != v {
+			t.Errorf("%q should yield %v", k, v)
+			break
+		}
+	}
+}
+
+func TestCheckChunks(t *testing.T) {
+	var m = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\n"
+	chunkEnd := CheckChunked([]byte(m))
+	expected := bytes.Index([]byte(m), []byte("0\r\n")) + 5
+	if chunkEnd != expected {
+		t.Errorf("expected %d to equal %d", chunkEnd, expected)
+	}
+
+	m = "7\r\nMozia\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"
+	chunkEnd = CheckChunked([]byte(m))
+	if chunkEnd != -1 {
+		t.Errorf("expected %d to equal %d", chunkEnd, -1)
+	}
+
+	// with trailers
+	m = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n0\r\n\r\nEXpires"
+	chunkEnd = CheckChunked([]byte(m))
+	expected = bytes.Index([]byte(m), []byte("0\r\n")) + 5
+	if chunkEnd != expected {
+		t.Errorf("expected %d to equal %d", chunkEnd, expected)
+	}
+
+	// last chunk inside the the body
+	// with trailers
+	m = "4\r\nWiki\r\n5\r\npedia\r\nE\r\n in\r\n\r\nchunks.\r\n3\r\n0\r\n\r\n0\r\n\r\nEXpires"
+	chunkEnd = CheckChunked([]byte(m))
+	expected = bytes.Index([]byte(m), []byte("0\r\n")) + 10
+	if chunkEnd != expected {
+		t.Errorf("expected %d to equal %d", chunkEnd, expected)
+	}
+
+	// checks with chucks-extensions
+	m = "4\r\nWiki\r\n5\r\npedia\r\nE; name='quoted string'\r\n in\r\n\r\nchunks.\r\n3\r\n0\r\n\r\n0\r\n\r\nEXpires"
+	chunkEnd = CheckChunked([]byte(m))
+	expected = bytes.Index([]byte(m), []byte("0\r\n")) + 10
+	if chunkEnd != expected {
+		t.Errorf("expected %d to equal %d", chunkEnd, expected)
+	}
+}
+
+func TestHasFullPayload(t *testing.T) {
+	var m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"
+	got := HasFullPayload([]byte(m))
+	expected := true
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+
+	// check with invalid chunk format
+	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7\r\nMozia\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\n"
+	got = HasFullPayload([]byte(m))
+	expected = false
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+
+	// check chunks with trailers
+	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nTrailer: Expires\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\nExpires: Wed, 21 Oct 2015 07:28:00 GMT\r\n\r\n"
+	got = HasFullPayload([]byte(m))
+	expected = true
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+
+	// check with missing trailers
+	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\nTrailer: Expires\r\n\r\n7\r\nMozilla\r\n9\r\nDeveloper\r\n7\r\nNetwork\r\n0\r\n\r\nExpires: Wed, 21 Oct 2015 07:28:00"
+	got = HasFullPayload([]byte(m))
+	expected = false
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+
+	// check with content-length
+	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\nMozillaDeveloperNetwork"
+	got = HasFullPayload([]byte(m))
+	expected = true
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+
+	// check missing total length
+	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\nMozillaDeveloperNet"
+	got = HasFullPayload([]byte(m))
+	expected = false
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+
+	// check with no body
+	m = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\n"
+	got = HasFullPayload([]byte(m))
+	expected = true
+	if got != expected {
+		t.Errorf("expected %v to equal %v", got, expected)
+	}
+}
+
+func BenchmarkHasFullPayload(b *testing.B) {
+	now := time.Now()
+	payload := make([]byte, 0xfc00)
+	for i := 0; i < 0xfc00; i++ {
+		payload[i] = '1'
+	}
+	var ok bool
+	data := []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n")
+	if ok = HasFullPayload(data); ok {
+		b.Error("HasFullPayload should fail")
+		return
+	}
+	for i := 0; i < b.N; i++ {
+		data = append(data, []byte(fmt.Sprintf("fc00\r\n%s\r\n", payload))...)
+		if ok = HasFullPayload(data); ok {
+			b.Error("HasFullPayload should fail")
+			return
+		}
+	}
+	data = append(data, []byte("0\r\n\r\n")...)
+	if ok = HasFullPayload(data); !ok {
+		b.Error("HasFullPayload should pass")
+		return
+	}
+	b.Logf("%dKB chunks in %s", b.N*64, time.Since(now))
 }

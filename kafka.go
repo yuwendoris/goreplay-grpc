@@ -95,13 +95,13 @@ func (m KafkaMessage) Dump() ([]byte, error) {
 
 	b.WriteString(fmt.Sprintf("%s %s %s\n", m.ReqType, m.ReqID, m.ReqTs))
 	b.WriteString(fmt.Sprintf("%s %s HTTP/1.1", m.ReqMethod, m.ReqURL))
-	b.Write(proto.CLRF)
+	b.Write(proto.CRLF)
 	for key, value := range m.ReqHeaders {
 		b.WriteString(fmt.Sprintf("%s: %s", key, value))
-		b.Write(proto.CLRF)
+		b.Write(proto.CRLF)
 	}
 
-	b.Write(proto.CLRF)
+	b.Write(proto.CRLF)
 	b.WriteString(m.ReqBody)
 
 	return b.Bytes(), nil

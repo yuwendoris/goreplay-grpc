@@ -3,15 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
-	"regexp"
 	"runtime"
-	"strconv"
 	"sync"
 	"time"
 )
 
+// DEMO indicates that goreplay is running in demo mode
 var DEMO string
 
 // MultiOption allows to specify multiple flags with same name and collects all values into array
@@ -27,25 +25,9 @@ func (h *MultiOption) Set(value string) error {
 	return nil
 }
 
-type InputRAWConfig struct {
-	Engine        string        `json:"input-raw-engine"`
-	TrackResponse bool          `json:"input-raw-track-response"`
-	RealIPHeader  string        `json:"input-raw-realip-header"`
-	Expire        time.Duration `json:"input-raw-expire"`
-	Protocol      string        `json:"input-raw-protocol"`
-	BpfFilter     string        `json:"input-raw-bpf-filter"`
-	TimestampType string        `json:"input-raw-timestamp-type"`
-
-	ImmediateMode   bool `json:"input-raw-immediate-mode"`
-	BufferSize      int64
-	OverrideSnapLen bool   `json:"input-raw-override-snaplen"`
-	BufferSizeFlag  string `json:"input-raw-buffer-size"`
-}
-
 // AppSettings is the struct of main configuration
 type AppSettings struct {
-	Verbose   bool          `json:"verbose"`
-	Debug     bool          `json:"debug"`
+	Verbose   int           `json:"verbose"`
 	Stats     bool          `json:"stats"`
 	ExitAfter time.Duration `json:"exit-after"`
 
@@ -69,14 +51,8 @@ type AppSettings struct {
 	OutputFile       MultiOption `json:"output-file"`
 	OutputFileConfig FileOutputConfig
 
-	InputRAW       MultiOption `json:"input_raw"`
-	InputRAWConfig InputRAWConfig
-
-	copyBufferSize int64
-
-	OutputFileSizeFlag    string `json:"output-file-size-limit"`
-	OutputFileMaxSizeFlag string `json:"output-file-max-size-limit"`
-	CopyBufferSizeFlag    string `json:"copy-buffer-size"`
+	InputRAW MultiOption `json:"input_raw"`
+	RAWInputConfig
 
 	Middleware string `json:"middleware"`
 
@@ -108,8 +84,7 @@ func usage() {
 func init() {
 	flag.Usage = usage
 	flag.StringVar(&Settings.Pprof, "http-pprof", "", "Enable profiling. Starts  http server on specified port, exposing special /debug/pprof endpoint. Example: `:8181`")
-	flag.BoolVar(&Settings.Verbose, "verbose", false, "Turn on more verbose output")
-	flag.BoolVar(&Settings.Debug, "debug", false, "Turn on debug output, shows all intercepted traffic. Works only when with `verbose` flag")
+	flag.IntVar(&Settings.Verbose, "verbose", 0, "set the level of verbosity, if greater than zero then it will turn on debug output")
 	flag.BoolVar(&Settings.Stats, "stats", false, "Turn on queue stats output")
 
 	if DEMO == "" {
@@ -145,62 +120,57 @@ func init() {
 	flag.Var(&Settings.OutputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
 	flag.DurationVar(&Settings.OutputFileConfig.FlushInterval, "output-file-flush-interval", time.Second, "Interval for forcing buffer flush to the file, default: 1s.")
 	flag.BoolVar(&Settings.OutputFileConfig.Append, "output-file-append", false, "The flushed chunk is appended to existence file or not. ")
-	flag.StringVar(&Settings.OutputFileSizeFlag, "output-file-size-limit", "32mb", "Size of each chunk. Default: 32mb")
-	flag.Int64Var(&Settings.OutputFileConfig.QueueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
-	flag.StringVar(&Settings.OutputFileMaxSizeFlag, "output-file-max-size-limit", "1TB", "Max size of output file, Default: 1TB")
+	flag.Var(&Settings.OutputFileConfig.SizeLimit, "output-file-size-limit", "Size of each chunk. Default: 32mb")
+	flag.IntVar(&Settings.OutputFileConfig.QueueLimit, "output-file-queue-limit", 256, "The length of the chunk queue. Default: 256")
+	flag.Var(&Settings.OutputFileConfig.OutputFileMaxSize, "output-file-max-size-limit", "Max size of output file, Default: 1TB")
 
 	flag.StringVar(&Settings.OutputFileConfig.BufferPath, "output-file-buffer", "/tmp", "The path for temporary storing current buffer: \n\tgor --input-raw :80 --output-file s3://mybucket/logs/%Y-%m-%d.gz --output-file-buffer /mnt/logs")
 
 	flag.BoolVar(&Settings.PrettifyHTTP, "prettify-http", false, "If enabled, will automatically decode requests and responses with: Content-Encoding: gzip and Transfer-Encoding: chunked. Useful for debugging, in conjuction with --output-stdout")
 
+	// input raw flags
 	flag.Var(&Settings.InputRAW, "input-raw", "Capture traffic from given port (use RAW sockets and require *sudo* access):\n\t# Capture traffic from 8080 port\n\tgor --input-raw :8080 --output-http staging.com")
-
-	flag.BoolVar(&Settings.InputRAWConfig.TrackResponse, "input-raw-track-response", false, "If turned on Gor will track responses in addition to requests, and they will be available to middleware and file output.")
-
-	flag.StringVar(&Settings.InputRAWConfig.Engine, "input-raw-engine", "libpcap", "Intercept traffic using `libpcap` (default), and `raw_socket`")
-
-	flag.StringVar(&Settings.InputRAWConfig.Protocol, "input-raw-protocol", "http", "Specify application protocol of intercepted traffic. Possible values: http, binary")
-
-	flag.StringVar(&Settings.InputRAWConfig.RealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
-
-	flag.DurationVar(&Settings.InputRAWConfig.Expire, "input-raw-expire", time.Second*2, "How much it should wait for the last TCP packet, till consider that TCP message complete.")
-
-	flag.StringVar(&Settings.InputRAWConfig.BpfFilter, "input-raw-bpf-filter", "", "BPF filter to write custom expressions. Can be useful in case of non standard network interfaces like tunneling or SPAN port. Example: --input-raw-bpf-filter 'dst port 80'")
-
-	flag.StringVar(&Settings.InputRAWConfig.TimestampType, "input-raw-timestamp-type", "", "Possible values: PCAP_TSTAMP_HOST, PCAP_TSTAMP_HOST_LOWPREC, PCAP_TSTAMP_HOST_HIPREC, PCAP_TSTAMP_ADAPTER, PCAP_TSTAMP_ADAPTER_UNSYNCED. This values not supported on all systems, GoReplay will tell you available values of you put wrong one.")
-	flag.StringVar(&Settings.CopyBufferSizeFlag, "copy-buffer-size", "5mb", "Set the buffer size for an individual request (default 5MB)")
-	flag.BoolVar(&Settings.InputRAWConfig.OverrideSnapLen, "input-raw-override-snaplen", false, "Override the capture snaplen to be 64k. Required for some Virtualized environments")
-	flag.BoolVar(&Settings.InputRAWConfig.ImmediateMode, "input-raw-immediate-mode", false, "Set pcap interface to immediate mode.")
-	flag.StringVar(&Settings.InputRAWConfig.BufferSizeFlag, "input-raw-buffer-size", "0", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
+	flag.BoolVar(&Settings.TrackResponse, "input-raw-track-response", false, "If turned on Gor will track responses in addition to requests, and they will be available to middleware and file output.")
+	flag.Var(&Settings.Engine, "input-raw-engine", "Intercept traffic using `libpcap` (default), `raw_socket` or `pcap_file`")
+	flag.Var(&Settings.Protocol, "input-raw-protocol", "Specify application protocol of intercepted traffic. Possible values: http, binary")
+	flag.StringVar(&Settings.RealIPHeader, "input-raw-realip-header", "", "If not blank, injects header with given name and real IP value to the request payload. Usually this header should be named: X-Real-IP")
+	flag.DurationVar(&Settings.Expire, "input-raw-expire", time.Second*2, "How much it should wait for the last TCP packet, till consider that TCP message complete.")
+	flag.StringVar(&Settings.BPFFilter, "input-raw-bpf-filter", "", "BPF filter to write custom expressions. Can be useful in case of non standard network interfaces like tunneling or SPAN port. Example: --input-raw-bpf-filter 'dst port 80'")
+	flag.StringVar(&Settings.TimestampType, "input-raw-timestamp-type", "", "Possible values: PCAP_TSTAMP_HOST, PCAP_TSTAMP_HOST_LOWPREC, PCAP_TSTAMP_HOST_HIPREC, PCAP_TSTAMP_ADAPTER, PCAP_TSTAMP_ADAPTER_UNSYNCED. This values not supported on all systems, GoReplay will tell you available values of you put wrong one.")
+	flag.Var(&Settings.CopyBufferSize, "copy-buffer-size", "Set the buffer size for an individual request (default 5MB)")
+	flag.BoolVar(&Settings.Snaplen, "input-raw-override-snaplen", false, "Override the capture snaplen to be 64k. Required for some Virtualized environments")
+	flag.DurationVar(&Settings.BufferTimeout, "input-raw-buffer-timeout", 0, "set the pcap timeout. for immediate mode don't set this flag")
+	flag.Var(&Settings.BufferSize, "input-raw-buffer-size", "Controls size of the OS buffer which holds packets until they dispatched. Default value depends by system: in Linux around 2MB. If you see big package drop, increase this value.")
+	flag.BoolVar(&Settings.Promiscuous, "input-raw-promisc", false, "enable promiscuous mode")
+	flag.BoolVar(&Settings.Monitor, "input-raw-monitor", false, "enable RF monitor mode")
+	flag.BoolVar(&Settings.Stats, "input-raw-stats", false, "enable stats generator on raw TCP messages")
 
 	flag.StringVar(&Settings.Middleware, "middleware", "", "Used for modifying traffic using external command")
-
-	// flag.Var(&Settings.inputHTTP, "input-http", "Read requests from HTTP, should be explicitly sent from your application:\n\t# Listen for http on 9000\n\tgor --input-http :9000 --output-http staging.com")
 
 	flag.Var(&Settings.OutputHTTP, "output-http", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-http http://staging.com")
 
 	/* outputHTTPConfig */
-	flag.IntVar(&Settings.OutputHTTPConfig.BufferSize, "output-http-response-buffer", 0, "HTTP response buffer size, all data after this size will be discarded.")
+	flag.Var(&Settings.OutputHTTPConfig.BufferSize, "output-http-response-buffer", "HTTP response buffer size, all data after this size will be discarded.")
 	flag.BoolVar(&Settings.OutputHTTPConfig.CompatibilityMode, "output-http-compatibility-mode", false, "Use standard Go client, instead of built-in implementation. Can be slower, but more compatible.")
 
 	flag.IntVar(&Settings.OutputHTTPConfig.WorkersMin, "output-http-workers-min", 0, "Gor uses dynamic worker scaling. Enter a number to set a minimum number of workers. default = 1.")
 	flag.IntVar(&Settings.OutputHTTPConfig.WorkersMax, "output-http-workers", 0, "Gor uses dynamic worker scaling. Enter a number to set a maximum number of workers. default = 0 = unlimited.")
 	flag.IntVar(&Settings.OutputHTTPConfig.QueueLen, "output-http-queue-len", 1000, "Number of requests that can be queued for output, if all workers are busy. default = 1000")
 
-	flag.IntVar(&Settings.OutputHTTPConfig.RedirectLimit, "output-http-redirect-limit", 0, "Enable how often redirects should be followed.")
+	flag.IntVar(&Settings.OutputHTTPConfig.RedirectLimit, "output-http-redirects", 0, "Enable how often redirects should be followed.")
 	flag.DurationVar(&Settings.OutputHTTPConfig.Timeout, "output-http-timeout", 5*time.Second, "Specify HTTP request/response timeout. By default 5s. Example: --output-http-timeout 30s")
 	flag.BoolVar(&Settings.OutputHTTPConfig.TrackResponses, "output-http-track-response", false, "If turned on, HTTP output responses will be set to all outputs like stdout, file and etc.")
 
 	flag.BoolVar(&Settings.OutputHTTPConfig.Stats, "output-http-stats", false, "Report http output queue stats to console every N milliseconds. See output-http-stats-ms")
 	flag.IntVar(&Settings.OutputHTTPConfig.StatsMs, "output-http-stats-ms", 5000, "Report http output queue stats to console every N milliseconds. default: 5000")
-	flag.BoolVar(&Settings.OutputHTTPConfig.OriginalHost, "output-http-original-host", false, "Normally gor replaces the Host http header with the Host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
+	flag.BoolVar(&Settings.OutputHTTPConfig.OriginalHost, "http-original-host", false, "Normally gor replaces the Host http header with the host supplied with --output-http.  This option disables that behavior, preserving the original Host header.")
 	flag.BoolVar(&Settings.OutputHTTPConfig.Debug, "output-http-debug", false, "Enables http debug output.")
 	flag.StringVar(&Settings.OutputHTTPConfig.ElasticSearch, "output-http-elasticsearch", "", "Send request and response stats to ElasticSearch:\n\tgor --input-raw :8080 --output-http staging.com --output-http-elasticsearch 'es_host:api_port/index_name'")
 	/* outputHTTPConfig */
 
 	flag.Var(&Settings.OutputBinary, "output-binary", "Forwards incoming binary payloads to given address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --input-raw-protocol binary --output-binary staging.com:80")
 	/* outputBinaryConfig */
-	flag.IntVar(&Settings.OutputBinaryConfig.BufferSize, "output-tcp-response-buffer", 0, "TCP response buffer size, all data after this size will be discarded.")
+	flag.Var(&Settings.OutputBinaryConfig.BufferSize, "output-tcp-response-buffer", "TCP response buffer size, all data after this size will be discarded.")
 	flag.IntVar(&Settings.OutputBinaryConfig.Workers, "output-binary-workers", 0, "Gor uses dynamic worker scaling by default.  Enter a number to run a set number of workers.")
 	flag.DurationVar(&Settings.OutputBinaryConfig.Timeout, "output-binary-timeout", 0, "Specify HTTP request/response timeout. By default 5s. Example: --output-binary-timeout 30s")
 	flag.BoolVar(&Settings.OutputBinaryConfig.TrackResponses, "output-binary-track-response", false, "If turned on, Binary output responses will be set to all outputs like stdout, file and etc.")
@@ -228,15 +198,13 @@ func init() {
 	flag.Var(&Settings.ModifierConfig.Params, "http-set-param", "Set request url param, if param already exists it will be overwritten:\n\tgor --input-raw :8080 --output-http staging.com --http-set-param api_key=1")
 
 	flag.Var(&Settings.ModifierConfig.Methods, "http-allow-method", "Whitelist of HTTP methods to replay. Anything else will be dropped:\n\tgor --input-raw :8080 --output-http staging.com --http-allow-method GET --http-allow-method OPTIONS")
-	flag.Var(&Settings.ModifierConfig.Methods, "output-http-method", "WARNING: `--output-http-method` DEPRECATED, use `--http-allow-method` instead")
 
-	flag.Var(&Settings.ModifierConfig.UrlRegexp, "http-allow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-url ^www.")
-	flag.Var(&Settings.ModifierConfig.UrlRegexp, "output-http-url-regexp", "WARNING: `--output-http-url-regexp` DEPRECATED, use `--http-allow-url` instead")
+	flag.Var(&Settings.ModifierConfig.URLRegexp, "http-allow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-url ^www.")
 
-	flag.Var(&Settings.ModifierConfig.UrlNegativeRegexp, "http-disallow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be forwarded:\n\t gor --input-raw :8080 --output-http staging.com --http-disallow-url ^www.")
+	flag.Var(&Settings.ModifierConfig.URLNegativeRegexp, "http-disallow-url", "A regexp to match requests against. Filter get matched against full url with domain. Anything else will be forwarded:\n\t gor --input-raw :8080 --output-http staging.com --http-disallow-url ^www.")
 
-	flag.Var(&Settings.ModifierConfig.UrlRewrite, "http-rewrite-url", "Rewrite the request url based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-url /v1/user/([^\\/]+)/ping:/v2/user/$1/ping")
-	flag.Var(&Settings.ModifierConfig.UrlRewrite, "output-http-rewrite-url", "WARNING: `--output-http-rewrite-url` DEPRECATED, use `--http-rewrite-url` instead")
+	flag.Var(&Settings.ModifierConfig.URLRewrite, "http-rewrite-url", "Rewrite the request url based on a mapping:\n\tgor --input-raw :8080 --output-http staging.com --http-rewrite-url /v1/user/([^\\/]+)/ping:/v2/user/$1/ping")
+	flag.Var(&Settings.ModifierConfig.URLRewrite, "output-http-rewrite-url", "WARNING: `--output-http-rewrite-url` DEPRECATED, use `--http-rewrite-url` instead")
 
 	flag.Var(&Settings.ModifierConfig.HeaderFilters, "http-allow-header", "A regexp to match a specific header against. Requests with non-matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-allow-header api-version:^v1")
 	flag.Var(&Settings.ModifierConfig.HeaderFilters, "output-http-header-filter", "WARNING: `--output-http-header-filter` DEPRECATED, use `--http-allow-header` instead")
@@ -252,118 +220,40 @@ func init() {
 	flag.Var(&Settings.ModifierConfig.ParamHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
 
 	// default values, using for tests
-	Settings.OutputFileConfig.sizeLimit = 33554432
-	Settings.OutputFileConfig.outputFileMaxSize = 1099511627776
-	Settings.copyBufferSize = 5242880
-	Settings.InputRAWConfig.BufferSize = 0
+	Settings.OutputFileConfig.SizeLimit = 33554432
+	Settings.OutputFileConfig.OutputFileMaxSize = 1099511627776
+	Settings.CopyBufferSize = 5242880
 
 }
 
 func checkSettings() {
-	outputFileSize, err := bufferParser(Settings.OutputFileSizeFlag, "32MB")
-	if err != nil {
-		log.Fatalf("output-file-size-limit error: %v\n", err)
+	if Settings.OutputFileConfig.SizeLimit < 1 {
+		Settings.OutputFileConfig.SizeLimit.Set("32mb")
 	}
-	Settings.OutputFileConfig.sizeLimit = outputFileSize
-
-	outputFileMaxSize, err := bufferParser(Settings.OutputFileMaxSizeFlag, "1TB")
-	if err != nil {
-		log.Fatalf("output-file-max-size-limit error: %v\n", err)
+	if Settings.OutputFileConfig.OutputFileMaxSize < 1 {
+		Settings.OutputFileConfig.OutputFileMaxSize.Set("1tb")
 	}
-	Settings.OutputFileConfig.outputFileMaxSize = outputFileMaxSize
-
-	copyBufferSize, err := bufferParser(Settings.CopyBufferSizeFlag, "5mb")
-	if err != nil {
-		log.Fatalf("copy-buffer-size error: %v\n", err)
+	if Settings.CopyBufferSize < 1 {
+		Settings.CopyBufferSize.Set("5mb")
 	}
-	Settings.copyBufferSize = copyBufferSize
-
-	inputRAWBufferSize, err := bufferParser(Settings.InputRAWConfig.BufferSizeFlag, "0")
-	if err != nil {
-		log.Fatalf("input-raw-buffer-size error: %v\n", err)
-	}
-	Settings.InputRAWConfig.BufferSize = inputRAWBufferSize
-
 	// libpcap has bug in mac os x. More info: https://github.com/buger/goreplay/issues/730
-	if Settings.InputRAWConfig.Expire == time.Second*2 && runtime.GOOS == "darwin" {
-		Settings.InputRAWConfig.Expire = time.Second
+	if Settings.Expire == time.Second*2 && runtime.GOOS == "darwin" {
+		Settings.Expire = time.Second
 	}
 }
 
 var previousDebugTime = time.Now()
 var debugMutex sync.Mutex
-var pID = os.Getpid()
 
-// Debug take an effect only if --verbose flag specified
-func Debug(args ...interface{}) {
-	if Settings.Verbose {
+// Debug take an effect only if --verbose is greater than 0 specified
+func Debug(level int, args ...interface{}) {
+	if Settings.Verbose >= level {
 		debugMutex.Lock()
 		defer debugMutex.Unlock()
 		now := time.Now()
-		diff := now.Sub(previousDebugTime).String()
+		diff := now.Sub(previousDebugTime)
 		previousDebugTime = now
-		fmt.Printf("[DEBUG][PID %d][%s][elapsed %s] ", pID, now.Format(time.StampNano), diff)
+		fmt.Printf("[DEBUG][elapsed %s]: ", diff)
 		fmt.Println(args...)
 	}
-}
-
-// the following regexes follow Go semantics https://golang.org/ref/spec#Letters_and_digits
-var (
-	rB   = regexp.MustCompile(`(?i)^(?:0b|0x|0o)?[\da-f_]+$`)
-	rKB  = regexp.MustCompile(`(?i)^(?:0b|0x|0o)?[\da-f_]+kb$`)
-	rMB  = regexp.MustCompile(`(?i)^(?:0b|0x|0o)?[\da-f_]+mb$`)
-	rGB  = regexp.MustCompile(`(?i)^(?:0b|0x|0o)?[\da-f_]+gb$`)
-	rTB  = regexp.MustCompile(`(?i)^(?:0b|0x|0o)?[\da-f_]+tb$`)
-	empt = regexp.MustCompile(`^[\n\t\r 0.\f\a]*$`)
-)
-
-// bufferParser parses buffer to bytes from different bases and data units
-// size is the buffer in string, rpl act as a replacement for empty buffer.
-// e.g: (--output-file-size-limit "") may override default 32mb with empty buffer,
-// which can be solved by setting rpl by bufferParser(buffer, "32mb")
-func bufferParser(size, rpl string) (buffer int64, err error) {
-	const (
-		_ = 1 << (iota * 10)
-		KB
-		MB
-		GB
-		TB
-	)
-
-	var (
-		lmt = len(size) - 2
-		s   = []byte(size)
-	)
-
-	if empt.Match(s) {
-		size = rpl
-		s = []byte(size)
-	}
-
-	// recover, especially when buffer size overflows int64 i.e ~8019PBs
-	defer func() {
-		if e, ok := recover().(error); ok {
-			err = e.(error)
-		}
-	}()
-
-	switch {
-	case rB.Match(s):
-		buffer, err = strconv.ParseInt(size, 0, 64)
-	case rKB.Match(s):
-		buffer, err = strconv.ParseInt(size[:lmt], 0, 64)
-		buffer *= KB
-	case rMB.Match(s):
-		buffer, err = strconv.ParseInt(size[:lmt], 0, 64)
-		buffer *= MB
-	case rGB.Match(s):
-		buffer, err = strconv.ParseInt(size[:lmt], 0, 64)
-		buffer *= GB
-	case rTB.Match(s):
-		buffer, err = strconv.ParseInt(size[:lmt], 0, 64)
-		buffer *= TB
-	default:
-		return 0, fmt.Errorf("invalid buffer %q", size)
-	}
-	return
 }

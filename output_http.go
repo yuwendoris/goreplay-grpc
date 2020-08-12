@@ -8,9 +8,8 @@ import (
 	"time"
 
 	"github.com/buger/goreplay/proto"
+	"github.com/buger/goreplay/size"
 )
-
-var _ = fmt.Println
 
 const initialDynamicWorkers = 10
 
@@ -28,7 +27,7 @@ func newHTTPWorker(output *HTTPOutput, queue chan []byte) *httpWorker {
 		Debug:              output.config.Debug,
 		OriginalHost:       output.config.OriginalHost,
 		Timeout:            output.config.Timeout,
-		ResponseBufferSize: output.config.BufferSize,
+		ResponseBufferSize: int(output.config.BufferSize),
 	})
 
 	w := &httpWorker{client: client}
@@ -75,7 +74,7 @@ type HTTPOutputConfig struct {
 
 	Timeout      time.Duration `json:"output-http-timeout"`
 	OriginalHost bool          `json:"output-http-original-host"`
-	BufferSize   int           `json:"output-http-response-buffer"`
+	BufferSize   size.Size     `json:"output-http-response-buffer"`
 
 	CompatibilityMode bool `json:"output-http-compatibility-mode"`
 
@@ -204,7 +203,7 @@ func (o *HTTPOutput) startWorker() {
 		Debug:              o.config.Debug,
 		OriginalHost:       o.config.OriginalHost,
 		Timeout:            o.config.Timeout,
-		ResponseBufferSize: o.config.BufferSize,
+		ResponseBufferSize: int(o.config.BufferSize),
 		CompatibilityMode:  o.config.CompatibilityMode,
 	})
 
@@ -275,23 +274,25 @@ func (o *HTTPOutput) Read(data []byte) (int, error) {
 	case resp = <-o.responses:
 	}
 
-	if Settings.Debug {
-		Debug("[OUTPUT-HTTP] Received response:", string(resp.payload))
-	}
+	Debug(3, "[OUTPUT-HTTP] Received response:", string(resp.payload))
 
 	header := payloadHeader(ReplayedResponsePayload, resp.uuid, resp.roundTripTime, resp.startedAt)
-	copy(data[0:len(header)], header)
-	copy(data[len(header):], resp.payload)
+	n := copy(data, header)
+	if len(data) > len(header) {
+		n += copy(data[len(header):], resp.payload)
+	}
+	dis := len(header) + len(data) - n
+	if dis > 0 {
+		Debug(2, "[OUTPUT-HTTP] discarded", dis, "increase copy buffer size")
+	}
 
-	return len(resp.payload) + len(header), nil
+	return n, nil
 }
 
 func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	meta := payloadMeta(request)
 
-	if Settings.Debug {
-		Debug(meta)
-	}
+	Debug(2, fmt.Sprintf("[OUTPUT-HTTP] meta: %q", meta))
 
 	if len(meta) < 2 {
 		return
@@ -299,7 +300,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	uuid := meta[1]
 
 	body := payloadBody(request)
-	if !proto.IsHTTPPayload(body) {
+	if !proto.HasRequestTitle(body) {
 		return
 	}
 
@@ -308,8 +309,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	stop := time.Now()
 
 	if err != nil {
-		log.Println("Error when sending ", err, time.Now())
-		Debug("Request error:", err)
+		Debug(1, "Error when sending ", err)
 	}
 
 	if o.config.TrackResponses {

@@ -21,6 +21,7 @@ type TCPOutput struct {
 	config   *TCPOutputConfig
 }
 
+// TCPOutputConfig tcp output configuration
 type TCPOutputConfig struct {
 	Secure bool `json:"output-tcp-secure"`
 	Sticky bool `json:"output-tcp-sticky"`
@@ -58,7 +59,7 @@ func NewTCPOutput(address string, config *TCPOutputConfig) io.Writer {
 }
 
 func (o *TCPOutput) worker(bufferIndex int) {
-	retries := 1
+	retries := 0
 	conn, err := o.connect(o.address)
 	for {
 		if err == nil {

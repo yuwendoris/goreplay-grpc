@@ -32,20 +32,16 @@ type fileInputReader struct {
 func (f *fileInputReader) parseNext() error {
 	payloadSeparatorAsBytes := []byte(payloadSeparator)
 	var buffer bytes.Buffer
-
 	for {
 		line, err := f.reader.ReadBytes('\n')
 
 		if err != nil {
 			if err != io.EOF {
-				log.Println(err)
-				return err
-			}
-
-			if err == io.EOF {
+				Debug(1, err)
+			} else {
 				f.Close()
-				return err
 			}
+			return err
 		}
 
 		if bytes.Equal(payloadSeparatorAsBytes[1:], line) {
@@ -61,7 +57,6 @@ func (f *fileInputReader) parseNext() error {
 		buffer.Write(line)
 	}
 
-	return nil
 }
 
 func (f *fileInputReader) ReadPayload() []byte {
@@ -193,8 +188,8 @@ func (i *FileInput) Read(data []byte) (int, error) {
 		return 0, ErrorStopped
 	case buf = <-i.data:
 	}
-	copy(data, buf)
-	return len(buf), nil
+	n := copy(data, buf)
+	return n, nil
 }
 
 func (i *FileInput) String() string {
@@ -263,14 +258,9 @@ func (i *FileInput) emit() {
 
 	log.Printf("FileInput: end of file '%s'\n", i.path)
 
-	// For now having fixed timeout is temporary solution
-	// Further should be modified, so outputs can report if their queue empty or not
-	time.Sleep(time.Second)
-	if closeCh != nil {
-		close(closeCh)
-	}
 }
 
+// Close closes this plugin
 func (i *FileInput) Close() error {
 	defer i.mu.Unlock()
 	i.mu.Lock()

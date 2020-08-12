@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"os"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 )
@@ -268,7 +267,7 @@ func NewExpectedCaptureFile(data [][]byte, file *os.File) *CaptureFile {
 
 func (expectedCaptureFile *CaptureFile) TearDown() {
 	if expectedCaptureFile.file != nil {
-		syscall.Unlink(expectedCaptureFile.file.Name())
+		os.Remove(expectedCaptureFile.file.Name())
 	}
 }
 
@@ -373,7 +372,7 @@ func ReadFromCaptureFile(captureFile *os.File, count int, callback writeCallback
 	case <-time.After(2 * time.Second):
 		err = errors.New("Timed out")
 	}
-	emitter.close()
+	emitter.Close()
 	return
 
 }
