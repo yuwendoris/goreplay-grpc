@@ -193,6 +193,46 @@ func TestPcapHandler(t *testing.T) {
 	}
 }
 
+func TestSocketHandler(t *testing.T) {
+	l, err := NewListener(LoopBack.Name, 8000, "", EngineRawSocket, true)
+	if err != nil {
+		t.Errorf("expected error to be nil, got %v", err)
+		return
+	}
+	err = l.Activate()
+	if err != nil {
+		t.Errorf("expected error to be nil, got %v", err)
+		return
+	}
+	quit := make(chan bool, 1)
+	pckts := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := l.ListenBackground(ctx, func(packet gopacket.Packet) {
+		pckts++
+		if pckts == 10 {
+			quit <- true
+		}
+	})
+	select {
+	case err = <-errCh:
+		t.Error(err)
+	case <-l.Reading:
+	}
+	if err != nil {
+		t.Errorf("expected error to be nil, got %v", err)
+		return
+	}
+	for i := 0; i < 5; i++ {
+		_, _ = net.Dial("tcp", "127.0.0.1:8000")
+	}
+	select {
+	case <-time.After(time.Second * 2):
+		t.Error("failed to parse packets in time")
+	case <-quit:
+	}
+}
+
 func BenchmarkPcapDump(b *testing.B) {
 	f, err := ioutil.TempFile("", "pcap_file")
 	if err != nil {
@@ -224,6 +264,7 @@ func BenchmarkPcapFile(b *testing.B) {
 	}
 	name := f.Name()
 	f.Close()
+	b.ResetTimer()
 	var l *Listener
 	l, err = NewListener(name, 8000, "", EnginePcapFile, true)
 	if err != nil {
@@ -287,4 +328,49 @@ func BenchmarkPcap(b *testing.B) {
 	case <-quit:
 	}
 	b.Logf("%d/%d packets in %s", pckts, b.N*2, time.Since(now))
+}
+
+func BenchmarkRawSocket(b *testing.B) {
+	now := time.Now()
+	var err error
+
+	l, err := NewListener(LoopBack.Name, 8000, "", EngineRawSocket, true)
+	if err != nil {
+		b.Errorf("expected error to be nil, got %v", err)
+		return
+	}
+	err = l.Activate()
+	if err != nil {
+		b.Errorf("expected error to be nil, got %v", err)
+		return
+	}
+	sock := l.Handles[LoopBack.Name].(*SockRaw)
+	quit := make(chan bool, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pckts := 0
+	errCh := l.ListenBackground(ctx, func(_ gopacket.Packet) {
+		pckts++
+		if pckts == b.N*2 {
+			quit <- true
+		}
+	})
+	select {
+	case err = <-errCh:
+		b.Error(err)
+	case <-l.Reading:
+	}
+	for i := 0; i < b.N; i++ {
+		buf := generateHeaders(1, 1<<10)
+		err = sock.WritePacketData(buf[:])
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	select {
+	case <-time.After(time.Second):
+	case <-quit:
+	}
+	sts, _ := l.Handles[LoopBack.Name].(*SockRaw).Stats()
+	b.Logf("%d/%d packets in %s", sts.Packets-sts.Drops, sts.Packets, time.Since(now))
 }

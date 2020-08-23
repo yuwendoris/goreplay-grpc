@@ -35,11 +35,13 @@ type Packet struct {
 // ParsePacket parse raw packets
 func ParsePacket(packet gopacket.Packet) (pckt *Packet, err error) {
 	// early check of error
-	_ = packet.ApplicationLayer()
-	if e, ok := packet.ErrorLayer().(*gopacket.DecodeFailure); ok {
-		err = e.Error()
-		return
-	}
+	defer func() {
+		if packet.ErrorLayer() != nil {
+			err = packet.ErrorLayer().Error()
+			println(err.Error())
+			return
+		}
+	}()
 
 	// initialization
 	pckt = new(Packet)

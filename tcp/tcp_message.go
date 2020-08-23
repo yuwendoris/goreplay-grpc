@@ -18,21 +18,20 @@ type Stats struct {
 	Length     int       // length of the data
 	Start      time.Time // first packet's timestamp
 	End        time.Time // last packet's timestamp
-	IPversion  byte
 	SrcAddr    string
 	DstAddr    string
 	IsIncoming bool
 	TimedOut   bool // timeout before getting the whole message
 	Truncated  bool // last packet truncated due to max message size
+	IPversion  byte
 }
 
 // Message is the representation of a tcp message
 type Message struct {
-	Stats
-
 	packets []*Packet
 	done    chan bool
 	data    []byte
+	Stats
 }
 
 // NewMessage ...
