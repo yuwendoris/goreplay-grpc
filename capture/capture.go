@@ -69,7 +69,7 @@ const (
 // Set is here so that EngineType can implement flag.Var
 func (eng *EngineType) Set(v string) error {
 	switch v {
-	case "", "libcap":
+	case "", "libpcap":
 		*eng = EnginePcap
 	case "pcap_file":
 		*eng = EnginePcapFile
