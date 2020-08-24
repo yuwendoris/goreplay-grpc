@@ -44,6 +44,7 @@ type Listener struct {
 	Activate   func() error // function is used to activate the engine. it must be called before reading packets
 	Handles    map[string]gopacket.PacketDataSource
 	Interfaces []NetInterface
+	loopIndex  int
 	Reading    chan bool // this channel is closed when the listener has started reading packets
 	PcapOptions
 	Engine        EngineType
@@ -73,7 +74,7 @@ func (eng *EngineType) Set(v string) error {
 		*eng = EnginePcap
 	case "pcap_file":
 		*eng = EnginePcapFile
-	case "sock_raw", "af_packet":
+	case "raw_socket", "af_packet":
 		*eng = EngineRawSocket
 	default:
 		return fmt.Errorf("invalid engine %s", v)
@@ -88,7 +89,7 @@ func (eng *EngineType) String() (e string) {
 	case EnginePcap:
 		e = "libpcap"
 	case EngineRawSocket:
-		e = "sock_raw"
+		e = "raw_socket"
 	default:
 		e = ""
 	}
@@ -308,6 +309,7 @@ func (l *Listener) SocketHandle(ifi NetInterface) (handle *SockRaw, err error) {
 		handle.Close()
 		return nil, fmt.Errorf("BPF filter error: %q%s, interface: %q", err, l.BPFFilter, ifi.Name)
 	}
+	handle.SetLoopbackIndex(int32(l.loopIndex))
 	return
 }
 
@@ -426,6 +428,9 @@ func (l *Listener) setInterfaces() (err error) {
 	}
 
 	for i := 0; i < len(ifis); i++ {
+		if ifis[i].Flags&net.FlagLoopback != 0 {
+			l.loopIndex = ifis[i].Index
+		}
 		if ifis[i].Flags&net.FlagUp == 0 {
 			continue
 		}

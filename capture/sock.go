@@ -37,9 +37,10 @@ type SockRaw struct {
 	fd          int
 	ifindex     int
 	snaplen     int
-	pollTimeout int
-	frame       int
+	pollTimeout uintptr
+	frame       uint32 // current frame
 	buf         []byte // points to the memory space of the ring buffer shared with the kernel.
+	loopIndex   int32  // this field must filled to avoid reading packet twice on a loopback device
 }
 
 // NewSockRaw returns new M'maped sock_raw on packet version 2.
@@ -53,7 +54,7 @@ func NewSockRaw(ifi net.Interface) (*SockRaw, error) {
 		fd:          fd,
 		ifindex:     ifi.Index,
 		snaplen:     unix.IP_MAXPACKET,
-		pollTimeout: -1,
+		pollTimeout: ^uintptr(0),
 	}
 
 	// set packet version
@@ -115,23 +116,32 @@ func (sock *SockRaw) ReadPacketData() (buf []byte, ci gopacket.CaptureInfo, err 
 		Fd:     int32(sock.fd),
 		Events: unix.POLLIN,
 	}
-	i := sock.frame * FRAMESIZE
+	var i int
+read:
+	i = int(sock.frame * FRAMESIZE)
 	tpHdr = (*unix.Tpacket2Hdr)(unsafe.Pointer(&sock.buf[i]))
 
 	for tpHdr.Status&unix.TP_STATUS_USER == 0 {
-		_, _, e := unix.Syscall(unix.SYS_POLL, uintptr(unsafe.Pointer(poll)), 1, uintptr(sock.pollTimeout))
+		_, _, e := unix.Syscall(unix.SYS_POLL, uintptr(unsafe.Pointer(poll)), 1, sock.pollTimeout)
 		if e != 0 && e != unix.EINTR {
 			return buf, ci, e
 		}
 	}
+
+	sock.frame = (sock.frame + 1) % FRAMENR
 	tpHdr.Status = unix.TP_STATUS_KERNEL
 	sockAddr := (*unix.RawSockaddrLinklayer)(unsafe.Pointer(&sock.buf[i+tpacket2hdrlen]))
+
+	// parse out repeating packets on loopback, 4 frames will be wasted obviously!
+	if sockAddr.Ifindex == sock.loopIndex && sock.frame%2 != 0 {
+		goto read
+	}
+
 	ci.Length = int(tpHdr.Len)
 	ci.Timestamp = time.Unix(int64(tpHdr.Sec), int64(tpHdr.Nsec))
 	ci.InterfaceIndex = int(sockAddr.Ifindex)
 	buf = make([]byte, tpHdr.Snaplen)
 	ci.CaptureLength = copy(buf, sock.buf[i+int(tpHdr.Mac):])
-	sock.frame = (sock.frame + 1) % FRAMENR
 
 	return
 }
@@ -169,7 +179,7 @@ func (sock *SockRaw) SetSnapLen(snap int) error {
 func (sock *SockRaw) SetTimeout(t time.Duration) error {
 	sock.mu.Lock()
 	defer sock.mu.Unlock()
-	sock.pollTimeout = int(t)
+	sock.pollTimeout = uintptr(t)
 	return nil
 }
 
@@ -204,7 +214,8 @@ func (sock *SockRaw) SetBPFFilter(expr string) error {
 	return unix.SetsockoptSockFprog(sock.fd, unix.SOL_SOCKET, unix.SO_ATTACH_FILTER, fprog)
 }
 
-// SetPromiscuous sets promiscous mode to the required value. If it is enabled, traffic not destined for the interface will also be captured.
+// SetPromiscuous sets promiscous mode to the required value. for better result capture on all interfaces instead.
+// If it is enabled, traffic not destined for the interface will also be captured.
 func (sock *SockRaw) SetPromiscuous(b bool) error {
 	sock.mu.Lock()
 	defer sock.mu.Unlock()
@@ -226,6 +237,13 @@ func (sock *SockRaw) Stats() (*unix.TpacketStats, error) {
 	sock.mu.Lock()
 	defer sock.mu.Unlock()
 	return unix.GetsockoptTpacketStats(sock.fd, unix.SOL_PACKET, unix.PACKET_STATISTICS)
+}
+
+// SetLoopbackIndex necessary to avoid reading packet twice on a loopback device
+func (sock *SockRaw) SetLoopbackIndex(i int32) {
+	sock.mu.Lock()
+	defer sock.mu.Unlock()
+	sock.loopIndex = i
 }
 
 // WritePacketData transmits a raw packet.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
 )
 
 var LoopBack = func() net.Interface {
@@ -164,21 +165,7 @@ func TestPcapHandler(t *testing.T) {
 		t.Errorf("expected error to be nil, got %v", err)
 		return
 	}
-	quit := make(chan bool, 1)
-	pckts := 0
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	errCh := l.ListenBackground(ctx, func(packet gopacket.Packet) {
-		pckts++
-		if pckts == 10 {
-			quit <- true
-		}
-	})
-	select {
-	case err = <-errCh:
-		t.Error(err)
-	case <-l.Reading:
-	}
+	defer l.Handles[LoopBack.Name].(*pcap.Handle).Close()
 	if err != nil {
 		t.Errorf("expected error to be nil, got %v", err)
 		return
@@ -186,10 +173,9 @@ func TestPcapHandler(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_, _ = net.Dial("tcp", "127.0.0.1:8000")
 	}
-	select {
-	case <-time.After(time.Second * 2):
-		t.Error("failed to parse packets in time")
-	case <-quit:
+	sts, _ := l.Handles[LoopBack.Name].(*pcap.Handle).Stats()
+	if sts.PacketsReceived < 5 {
+		t.Errorf("expected >=5 packets got %d", sts.PacketsReceived)
 	}
 }
 
@@ -204,21 +190,7 @@ func TestSocketHandler(t *testing.T) {
 		t.Errorf("expected error to be nil, got %v", err)
 		return
 	}
-	quit := make(chan bool, 1)
-	pckts := 0
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	errCh := l.ListenBackground(ctx, func(packet gopacket.Packet) {
-		pckts++
-		if pckts == 10 {
-			quit <- true
-		}
-	})
-	select {
-	case err = <-errCh:
-		t.Error(err)
-	case <-l.Reading:
-	}
+	defer l.Handles[LoopBack.Name].(*SockRaw).Close()
 	if err != nil {
 		t.Errorf("expected error to be nil, got %v", err)
 		return
@@ -226,10 +198,9 @@ func TestSocketHandler(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_, _ = net.Dial("tcp", "127.0.0.1:8000")
 	}
-	select {
-	case <-time.After(time.Second * 2):
-		t.Error("failed to parse packets in time")
-	case <-quit:
+	sts, _ := l.Handles[LoopBack.Name].(*SockRaw).Stats()
+	if sts.Packets < 5 {
+		t.Errorf("expected >=5 packets got %d", sts.Packets)
 	}
 }
 
@@ -305,36 +276,19 @@ func BenchmarkPcap(b *testing.B) {
 		b.Errorf("expected error to be nil, got %v", err)
 		return
 	}
-	quit := make(chan bool, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	pckts := 0
-	errCh := l.ListenBackground(ctx, func(_ gopacket.Packet) {
-		pckts++
-		if pckts == b.N*2 {
-			quit <- true
-		}
-	})
-	select {
-	case err = <-errCh:
-		b.Error(err)
-	case <-l.Reading:
-	}
+	defer l.Handles[LoopBack.Name].(*pcap.Handle).Close()
 	for i := 0; i < b.N; i++ {
 		_, _ = net.Dial("tcp", "127.0.0.1:8000")
 	}
-	select {
-	case <-time.After(time.Second):
-	case <-quit:
-	}
-	b.Logf("%d/%d packets in %s", pckts, b.N*2, time.Since(now))
+	sts, _ := l.Handles[LoopBack.Name].(*pcap.Handle).Stats()
+	b.Logf("%d packets in %s", sts.PacketsReceived, time.Since(now))
 }
 
 func BenchmarkRawSocket(b *testing.B) {
 	now := time.Now()
 	var err error
 
-	l, err := NewListener(LoopBack.Name, 8000, "", EngineRawSocket, true)
+	l, err := NewListener(LoopBack.Name, 0, "", EngineRawSocket, true)
 	if err != nil {
 		b.Errorf("expected error to be nil, got %v", err)
 		return
@@ -344,33 +298,10 @@ func BenchmarkRawSocket(b *testing.B) {
 		b.Errorf("expected error to be nil, got %v", err)
 		return
 	}
-	sock := l.Handles[LoopBack.Name].(*SockRaw)
-	quit := make(chan bool, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	pckts := 0
-	errCh := l.ListenBackground(ctx, func(_ gopacket.Packet) {
-		pckts++
-		if pckts == b.N*2 {
-			quit <- true
-		}
-	})
-	select {
-	case err = <-errCh:
-		b.Error(err)
-	case <-l.Reading:
-	}
+	defer l.Handles[LoopBack.Name].(*SockRaw).Close()
 	for i := 0; i < b.N; i++ {
-		buf := generateHeaders(1, 1<<10)
-		err = sock.WritePacketData(buf[:])
-		if err != nil {
-			b.Error(err)
-		}
-	}
-	select {
-	case <-time.After(time.Second):
-	case <-quit:
+		_, _ = net.Dial("tcp", "127.0.0.1:8000")
 	}
 	sts, _ := l.Handles[LoopBack.Name].(*SockRaw).Stats()
-	b.Logf("%d/%d packets in %s", sts.Packets-sts.Drops, sts.Packets, time.Since(now))
+	b.Logf("%d packets in %s", sts.Packets, time.Since(now))
 }
