@@ -146,6 +146,19 @@ func (pckt *Packet) SYNOptions() (mss uint16, windowscale byte) {
 	return
 }
 
+// LinkInfo returns info about the link layer
+func (pckt *Packet) LinkInfo() string {
+	if l, ok := pckt.LinkLayer.(*layers.Ethernet); ok {
+		return fmt.Sprintf(
+			"Source Mac: %s\nDestination Mac: %s\nProtocol: %s",
+			l.SrcMAC,
+			l.DstMAC,
+			l.EthernetType,
+		)
+	}
+	return "<Not Ethernet>"
+}
+
 // Flag returns formatted tcp flags
 func (pckt *Packet) Flag() (flag string) {
 	if pckt.FIN {
@@ -175,6 +188,7 @@ func (pckt *Packet) Flag() (flag string) {
 // String output for a TCP Packet
 func (pckt *Packet) String() string {
 	return fmt.Sprintf(`Time: %s
+%s
 Source: %s
 Destination: %s
 IHL: %d
@@ -188,6 +202,7 @@ Options: %s
 Data Size: %d
 Lost Data: %d`,
 		pckt.Timestamp.Format(time.StampNano),
+		pckt.LinkInfo(),
 		pckt.Src(),
 		pckt.Dst(),
 		pckt.IHL(),

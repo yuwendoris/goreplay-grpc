@@ -139,7 +139,7 @@ func NewMessagePool(maxSize size.Size, messageExpire time.Duration, debugger Deb
 func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	var in, out bool
 	pckt, err := ParsePacket(packet)
-	if err != nil {
+	if err != nil || pckt == nil {
 		go pool.say(4, fmt.Sprintf("error decoding packet(%dBytes):%s\n", packet.Metadata().CaptureLength, err))
 		return
 	}
@@ -150,6 +150,19 @@ func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	m, ok := pool.pool[srcKey]
 	if !ok {
 		m, ok = pool.pool[dstKey]
+	}
+	if pckt.RST {
+		if ok {
+			<-m.done
+		}
+		if m, ok = pool.pool[pckt.Dst()]; !ok {
+			m, ok = pool.pool[pckt.Dst()+"="+srcKey]
+		}
+		if ok {
+			<-m.done
+		}
+		go pool.say(4, fmt.Sprintf("RST flag from %s to %s at %s\n", pckt.Src(), pckt.Dst(), pckt.Timestamp))
+		return
 	}
 	switch {
 	case ok:
@@ -201,8 +214,6 @@ func (pool *MessagePool) addPacket(m *Message, pckt *Packet) {
 	case trunc >= 0:
 	case pool.End != nil && pool.End(m):
 	case pckt.FIN:
-	case pckt.RST:
-		go pool.say(4, fmt.Sprintf("RST flag from %s to %s at %s\n", pckt.Src(), pckt.Dst(), pckt.Timestamp))
 	default:
 		return
 	}

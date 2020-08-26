@@ -120,15 +120,19 @@ func (sock *SockRaw) ReadPacketData() (buf []byte, ci gopacket.CaptureInfo, err 
 read:
 	i = int(sock.frame * FRAMESIZE)
 	tpHdr = (*unix.Tpacket2Hdr)(unsafe.Pointer(&sock.buf[i]))
+	sock.frame = (sock.frame + 1) % FRAMENR
 
-	for tpHdr.Status&unix.TP_STATUS_USER == 0 {
+	if tpHdr.Status&unix.TP_STATUS_USER == 0 {
 		_, _, e := unix.Syscall(unix.SYS_POLL, uintptr(unsafe.Pointer(poll)), 1, sock.pollTimeout)
 		if e != 0 && e != unix.EINTR {
 			return buf, ci, e
 		}
+		// it might be some other frame with data!
+		if tpHdr.Status&unix.TP_STATUS_USER == 0 {
+			goto read
+		}
 	}
 
-	sock.frame = (sock.frame + 1) % FRAMENR
 	tpHdr.Status = unix.TP_STATUS_KERNEL
 	sockAddr := (*unix.RawSockaddrLinklayer)(unsafe.Pointer(&sock.buf[i+tpacket2hdrlen]))
 
