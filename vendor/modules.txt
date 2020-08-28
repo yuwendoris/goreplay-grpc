@@ -67,7 +67,7 @@ github.com/eapache/go-xerial-snappy
 github.com/eapache/queue
 # github.com/golang/snappy v0.0.1
 github.com/golang/snappy
-# github.com/google/gopacket v1.1.17
+# github.com/google/gopacket v1.1.18
 ## explicit
 github.com/google/gopacket
 github.com/google/gopacket/layers
@@ -105,6 +105,10 @@ golang.org/x/crypto/pbkdf2
 ## explicit
 golang.org/x/net/internal/socks
 golang.org/x/net/proxy
+# golang.org/x/sys v0.0.0-20200323222414-85ca7c5b95cd
+## explicit
+golang.org/x/sys/unix
+golang.org/x/sys/windows
 # gopkg.in/jcmturner/aescts.v1 v1.0.1
 gopkg.in/jcmturner/aescts.v1
 # gopkg.in/jcmturner/dnsutils.v1 v1.0.1
