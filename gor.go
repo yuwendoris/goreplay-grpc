@@ -19,7 +19,6 @@ import (
 )
 
 var (
-	mode       string
 	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 	memprofile = flag.String("memprofile", "", "write memory profile to this file")
 )

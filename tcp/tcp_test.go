@@ -76,8 +76,8 @@ func TestMessageParserWithHint(t *testing.T) {
 		return
 	case m = <-mssg:
 	}
-	if len(m.packets) != 3 {
-		t.Errorf("expected to have 3 packets got %d", len(m.packets))
+	if len(m.packets) != 7 {
+		t.Errorf("expected to have 7 packets got %d", len(m.packets))
 	}
 	if !bytes.HasSuffix(m.Data(), []byte("\n7\r\nNetwork\r\n0\r\n\r\n")) {
 		t.Errorf("expected to %q to have suffix %q", m.Data(), []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))
@@ -89,8 +89,8 @@ func TestMessageParserWithHint(t *testing.T) {
 		return
 	case m = <-mssg:
 	}
-	if len(m.packets) != 3 {
-		t.Errorf("expected to have 3 packets got %d", len(m.packets))
+	if len(m.packets) != 7 {
+		t.Errorf("expected to have 7 packets got %d", len(m.packets))
 	}
 	if !bytes.HasSuffix(m.Data(), []byte("Network")) {
 		t.Errorf("expected to %q to have suffix %q", m.Data(), []byte("Network"))
