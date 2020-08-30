@@ -153,12 +153,14 @@ func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	}
 	if pckt.RST {
 		if ok {
+			m.done <- true
 			<-m.done
 		}
 		if m, ok = pool.pool[pckt.Dst()]; !ok {
 			m, ok = pool.pool[pckt.Dst()+"="+srcKey]
 		}
 		if ok {
+			m.done <- true
 			<-m.done
 		}
 		go pool.say(4, fmt.Sprintf("RST flag from %s to %s at %s\n", pckt.Src(), pckt.Dst(), pckt.Timestamp))
@@ -168,13 +170,12 @@ func (pool *MessagePool) Handler(packet gopacket.Packet) {
 	case ok:
 		pool.addPacket(m, pckt)
 		return
-	case pool.Start != nil:
-		if in, out = pool.Start(pckt); in || out {
-			break
-		}
-		return
 	case pckt.SYN:
 		in = !pckt.ACK
+	case pool.Start != nil:
+		if in, out = pool.Start(pckt); !(in || out) {
+			return
+		}
 	default:
 		return
 	}
@@ -212,8 +213,8 @@ func (pool *MessagePool) addPacket(m *Message, pckt *Packet) {
 	m.add(pckt)
 	switch {
 	case trunc >= 0:
-	case pool.End != nil && pool.End(m):
 	case pckt.FIN:
+	case pool.End != nil && pool.End(m):
 	default:
 		return
 	}
