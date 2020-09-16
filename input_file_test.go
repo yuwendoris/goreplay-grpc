@@ -149,12 +149,13 @@ func TestInputFileRequestsWithLatency(t *testing.T) {
 	end := time.Now().UnixNano()
 
 	var expectedLatency int64 = 250000000 - 100000000
+	var delta int64 = 50000000
 	realLatency := end - start
-	if realLatency < expectedLatency {
+	if realLatency < expectedLatency-delta {
 		t.Errorf("Should emit requests respecting latency. Expected: %v, real: %v", expectedLatency, realLatency)
 	}
 
-	if realLatency > expectedLatency+10000000 {
+	if realLatency > expectedLatency+delta {
 		t.Errorf("Should emit requests respecting latency. Expected: %v, real: %v", expectedLatency, realLatency)
 
 	}
