@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"os"
 )
 
 // DummyOutput used for debugging, prints all incoming requests
@@ -16,9 +16,9 @@ func NewDummyOutput() (di *DummyOutput) {
 }
 
 func (i *DummyOutput) Write(data []byte) (int, error) {
-	fmt.Println(string(data))
-
-	return len(data), nil
+	n, err := os.Stdout.Write(data)
+	os.Stdout.Write([]byte{'\n'})
+	return n, err
 }
 
 func (i *DummyOutput) String() string {
