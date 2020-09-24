@@ -21,7 +21,6 @@ import (
 	"bytes"
 	"net/http"
 	"net/textproto"
-	"strconv"
 	"strings"
 
 	"github.com/buger/goreplay/byteutils"
@@ -344,8 +343,11 @@ func HasResponseTitle(payload []byte) bool {
 	if !(ok && major == 1 && (minor == 0 || minor == 1)) {
 		return false
 	}
-	status, err := strconv.Atoi(s[VersionLen+1 : VersionLen+4])
-	if err != nil {
+	if s[VersionLen] != ' ' {
+		return false
+	}
+	status, ok := atoI(payload[VersionLen+1:VersionLen+4], 10)
+	if !ok || s[VersionLen+4] != ' ' {
 		return false
 	}
 	statusText := http.StatusText(status)
@@ -484,7 +486,7 @@ func atoI(s []byte, base int) (num int, ok bool) {
 			return 0, false
 		}
 		v = int(hexTable[s[i]])
-		if v >= base {
+		if v >= base || (v == 0 && s[i] != '0') {
 			return 0, false
 		}
 		num = (num * base) + v
