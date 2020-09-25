@@ -330,7 +330,9 @@ func TestHasResponseTitle(t *testing.T) {
 		"HTTP/1.1 100 Continue\r\n": true,
 		"HTTP/1.1  \r\n":            false,
 		"HTTP/4.0 100Continue\r\n":  false,
-		"HTTP/4.0 100 Continue\r\n": false,
+		"HTTP/1.0 10r Continue\r\n": false,
+		"HTTP/1.1 200\r\n":          false,
+		"HTTP/1.1 200\r\nServer: Tengine\r\nContent-Length: 0\r\nConnection: close\r\n\r\n": false,
 	}
 	for k, v := range m {
 		if HasResponseTitle([]byte(k)) != v {
