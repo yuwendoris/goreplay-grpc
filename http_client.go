@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -183,18 +184,26 @@ func (c *HTTPClient) Disconnect() {
 	}
 }
 
+func isSyscallOpError(err error, errno syscall.Errno) bool {
+	if opErr, ok := err.(*net.OpError); ok {
+		if syscallErr, ok := opErr.Err.(*os.SyscallError); ok {
+			return syscallErr.Err == errno
+		}
+	}
+	return err == errno
+}
+
 func (c *HTTPClient) isAlive(readBytes *int) bool {
 	// Ready 1 byte from socket without timeout to check if it not closed
 	c.conn.SetReadDeadline(time.Now().Add(time.Millisecond))
 	n, err := c.conn.Read(c.respBuf[:1])
 
-	if err == io.EOF {
+	if err == io.EOF || isSyscallOpError(err, syscall.ECONNRESET) {
 		Debug(3, "[HTTPClient] connection closed, reconnecting")
 		return false
 	}
-
-	if err == syscall.EPIPE {
-		Debug(3, "Detected broken pipe.", err)
+	if isSyscallOpError(err, syscall.EPIPE) {
+		Debug(3, "[HTTPClient] Detected broken pipe.", err)
 		return false
 	}
 	if n != 0 {
