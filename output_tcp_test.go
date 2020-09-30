@@ -11,6 +11,7 @@ import (
 )
 
 func TestTCPOutput(t *testing.T) {
+	Settings.Verbose = 2
 	wg := new(sync.WaitGroup)
 	quit := make(chan int)
 
@@ -18,7 +19,7 @@ func TestTCPOutput(t *testing.T) {
 		wg.Done()
 	})
 	input := NewTestInput()
-	output := NewTCPOutput(listener.Addr().String(), &TCPOutputConfig{})
+	output := NewTCPOutput(listener.Addr().String(), &TCPOutputConfig{Workers: 10})
 
 	plugins := &InOutPlugins{
 		Inputs:  []io.Reader{input},
@@ -29,7 +30,7 @@ func TestTCPOutput(t *testing.T) {
 	emitter := NewEmitter(quit)
 	go emitter.Start(plugins, Settings.Middleware)
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1)
 		input.EmitGET()
 	}
@@ -48,9 +49,9 @@ func startTCP(cb func([]byte)) net.Listener {
 	go func() {
 		for {
 			conn, _ := listener.Accept()
-			defer conn.Close()
 
-			go func() {
+			go func(conn net.Conn) {
+				defer conn.Close()
 				reader := bufio.NewReader(conn)
 				scanner := bufio.NewScanner(reader)
 				scanner.Split(payloadScanner)
@@ -58,7 +59,7 @@ func startTCP(cb func([]byte)) net.Listener {
 				for scanner.Scan() {
 					cb(scanner.Bytes())
 				}
-			}()
+			}(conn)
 		}
 	}()
 
@@ -73,7 +74,12 @@ func BenchmarkTCPOutput(b *testing.B) {
 		wg.Done()
 	})
 	input := NewTestInput()
-	output := NewTCPOutput(listener.Addr().String(), &TCPOutputConfig{})
+	input.data = make(chan []byte, b.N)
+	for i := 0; i < b.N; i++ {
+		input.EmitGET()
+	}
+	wg.Add(b.N)
+	output := NewTCPOutput(listener.Addr().String(), &TCPOutputConfig{Workers: 10})
 
 	plugins := &InOutPlugins{
 		Inputs:  []io.Reader{input},
@@ -82,25 +88,21 @@ func BenchmarkTCPOutput(b *testing.B) {
 	plugins.All = append(plugins.All, input, output)
 
 	emitter := NewEmitter(quit)
-	go emitter.Start(plugins, Settings.Middleware)
-
+	// avoid counting above initialization
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		wg.Add(1)
-		input.EmitGET()
-	}
+	go emitter.Start(plugins, Settings.Middleware)
 
 	wg.Wait()
 	emitter.Close()
 }
 
 func TestStickyDisable(t *testing.T) {
-	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: false}}
+	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: false, Workers: 10}}
 
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10; i++ {
 		index := tcpOutput.getBufferIndex(getTestBytes())
-		if index != 0 {
-			t.Errorf("Sticky is disable. Got: %d want 0", index)
+		if index != (i+1)%10 {
+			t.Errorf("Sticky is disable. Got: %d want %d", index, (i+1)%10)
 		}
 	}
 }
@@ -111,7 +113,7 @@ func TestBufferDistribution(t *testing.T) {
 	percentDistributionErrorRange := 20
 
 	buffer := make([]int, numberOfWorkers)
-	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: true}}
+	tcpOutput := TCPOutput{config: &TCPOutputConfig{Sticky: true, Workers: 10}}
 	for i := 0; i < numberOfMessages; i++ {
 		buffer[tcpOutput.getBufferIndex(getTestBytes())]++
 	}
