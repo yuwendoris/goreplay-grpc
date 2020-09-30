@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -238,16 +237,12 @@ func checkSettings() {
 	if Settings.CopyBufferSize < 1 {
 		Settings.CopyBufferSize.Set("5mb")
 	}
-	// libpcap has bug in mac os x. More info: https://github.com/buger/goreplay/issues/730
-	if Settings.Expire == time.Second*2 && runtime.GOOS == "darwin" {
-		Settings.Expire = time.Second
-	}
 }
 
 var previousDebugTime = time.Now()
 var debugMutex sync.Mutex
 
-// Debug take an effect only if --verbose is greater than 0 specified
+// Debug take an effect only if --verbose greater than 0 is specified
 func Debug(level int, args ...interface{}) {
 	if Settings.Verbose >= level {
 		debugMutex.Lock()
@@ -255,7 +250,7 @@ func Debug(level int, args ...interface{}) {
 		now := time.Now()
 		diff := now.Sub(previousDebugTime)
 		previousDebugTime = now
-		fmt.Printf("[DEBUG][elapsed %s]: ", diff)
-		fmt.Println(args...)
+		fmt.Fprintf(os.Stderr, "[DEBUG][elapsed %s]: ", diff)
+		fmt.Fprintln(os.Stderr, args...)
 	}
 }
