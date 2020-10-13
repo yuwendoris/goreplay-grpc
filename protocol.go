@@ -72,19 +72,11 @@ func payloadID(payload []byte) (id []byte) {
 	if len(meta) < 2 {
 		return
 	}
-	// id is encoded in hex, we need to revert to how it was
-	id = make([]byte, 20)
-	hex.Decode(id, meta[1])
-	return
+	return meta[1]
 }
 
 func isOriginPayload(payload []byte) bool {
-	switch payload[0] {
-	case RequestPayload, ResponsePayload:
-		return true
-	default:
-		return false
-	}
+	return payload[0] == RequestPayload || payload[0] == ResponsePayload
 }
 
 func isRequestPayload(payload []byte) bool {
