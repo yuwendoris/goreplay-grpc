@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -50,34 +51,47 @@ type KafkaMessage struct {
 	ReqHeaders map[string]string `json:"Req_Headers,omitempty"`
 }
 
+// ErrorTLSMissingKey is the error when client cert is present but key is missing
+var ErrorTLSMissingKey = errors.New("Missing key of client certificate")
+// ErrorTLSMissingCert is the error when key is present but client cert is missing
+var ErrorTLSMissingCert = errors.New("Missing client certificate")
+
 // NewTLSConfig loads TLS certificates
 func NewTLSConfig(clientCertFile, clientKeyFile, caCertFile string) (*tls.Config, error) {
 	tlsConfig := tls.Config{}
 
+	if clientCertFile != "" && clientKeyFile == "" {
+		return &tlsConfig, ErrorTLSMissingKey
+	}
+	if clientCertFile == "" && clientKeyFile != "" {
+		return &tlsConfig, ErrorTLSMissingCert
+	}
 	// Load client cert
-	cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
-	if err != nil {
-		return &tlsConfig, err
+	if  (clientCertFile != "") && (clientKeyFile != "") {
+		cert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
+		if err != nil {
+			return &tlsConfig, err
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
-	tlsConfig.Certificates = []tls.Certificate{cert}
-
 	// Load CA cert
-	caCert, err := ioutil.ReadFile(caCertFile)
-	if err != nil {
-		return &tlsConfig, err
+	if caCertFile != "" {
+		caCert, err := ioutil.ReadFile(caCertFile)
+		if err != nil {
+			return &tlsConfig, err
+		}
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
+		tlsConfig.RootCAs = caCertPool
 	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-	tlsConfig.RootCAs = caCertPool
-
-	return &tlsConfig, err
+	return &tlsConfig, nil
 }
 
 // NewKafkaConfig returns Kafka config with or without TLS
 func NewKafkaConfig(tlsConfig *KafkaTLSConfig) *sarama.Config {
 	config := sarama.NewConfig()
 	// Configuration options go here
-	if (tlsConfig != nil) && (tlsConfig.CACert != "") && (tlsConfig.ClientCert != "") && (tlsConfig.ClientKey != "") {
+	if tlsConfig != nil && (tlsConfig.ClientCert != "" || tlsConfig.CACert != "") {
 		config.Net.TLS.Enable = true
 		tlsConfig, err := NewTLSConfig(tlsConfig.ClientCert, tlsConfig.ClientKey, tlsConfig.CACert)
 		if err != nil {
