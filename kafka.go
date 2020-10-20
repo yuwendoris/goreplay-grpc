@@ -51,10 +51,6 @@ type KafkaMessage struct {
 	ReqHeaders map[string]string `json:"Req_Headers,omitempty"`
 }
 
-// ErrorTLSMissingKey is the error when client cert is present but key is missing
-var ErrorTLSMissingKey = errors.New("Missing key of client certificate")
-// ErrorTLSMissingCert is the error when key is present but client cert is missing
-var ErrorTLSMissingCert = errors.New("Missing client certificate")
 
 // NewTLSConfig loads TLS certificates
 func NewTLSConfig(clientCertFile, clientKeyFile, caCertFile string) (*tls.Config, error) {
