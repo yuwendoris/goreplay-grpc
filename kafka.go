@@ -64,7 +64,7 @@ func NewTLSConfig(clientCertFile, clientKeyFile, caCertFile string) (*tls.Config
 		return &tlsConfig, ErrorTLSMissingKey
 	}
 	if clientCertFile == "" && clientKeyFile != "" {
-		return &tlsConfig, ErrorTLSMissingCert
+		return &tlsConfig, errors.New("missing TLS client certificate in kafka")
 	}
 	// Load client cert
 	if  (clientCertFile != "") && (clientKeyFile != "") {
