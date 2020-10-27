@@ -15,9 +15,15 @@ func NewDummyOutput() (di *DummyOutput) {
 	return
 }
 
-func (i *DummyOutput) Write(data []byte) (int, error) {
-	n, err := os.Stdout.Write(data)
-	os.Stdout.Write([]byte{'\n'})
+// PluginWrite writes message to this plugin
+func (i *DummyOutput) PluginWrite(msg *Message) (int, error) {
+	var n, nn int
+	var err error
+	n, err = os.Stdout.Write(msg.Meta)
+	nn, err = os.Stdout.Write(msg.Data)
+	n += nn
+	nn, err = os.Stdout.Write(payloadSeparatorAsBytes)
+	n += nn
 	return n, err
 }
 

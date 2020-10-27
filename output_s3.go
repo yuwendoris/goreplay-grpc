@@ -67,8 +67,9 @@ func (o *S3Output) connect() {
 	}
 }
 
-func (o *S3Output) Write(data []byte) (n int, err error) {
-	return o.buffer.Write(data)
+// PluginWrite writes message to this plugin
+func (o *S3Output) PluginWrite(msg *Message) (n int, err error) {
+	return o.buffer.PluginWrite(msg)
 }
 
 func (o *S3Output) String() string {

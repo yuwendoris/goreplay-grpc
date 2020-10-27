@@ -102,44 +102,39 @@ func NewRAWInput(address string, config RAWInputConfig) (i *RAWInput) {
 	return
 }
 
-func (i *RAWInput) Read(data []byte) (n int, err error) {
-	var msg *tcp.Message
-	var buf []byte
+// PluginRead reads meassage from this plugin
+func (i *RAWInput) PluginRead() (*Message, error) {
+	var msgTCP *tcp.Message
+	var msg Message
 	select {
 	case <-i.quit:
-		return 0, ErrorStopped
-	case msg = <-i.message:
-		buf = msg.Data()
+		return nil, ErrorStopped
+	case msgTCP = <-i.message:
+		msg.Data = msgTCP.Data()
 	}
-	var header []byte
-
 	var msgType byte = ResponsePayload
-	if msg.IsIncoming {
+	if msgTCP.IsIncoming {
 		msgType = RequestPayload
 		if i.RealIPHeader != "" {
-			buf = proto.SetHeader(buf, []byte(i.RealIPHeader), []byte(msg.SrcAddr))
+			msg.Data = proto.SetHeader(msg.Data, []byte(i.RealIPHeader), []byte(msgTCP.SrcAddr))
 		}
 	}
-	header = payloadHeader(msgType, msg.UUID(), msg.Start.UnixNano(), msg.End.UnixNano()-msg.Start.UnixNano())
+	msg.Meta = payloadHeader(msgType, msgTCP.UUID(), msgTCP.Start.UnixNano(), msgTCP.End.UnixNano()-msgTCP.Start.UnixNano())
 
-	n = copy(data, header)
-	if len(data) > len(header) {
-		n += copy(data[len(header):], buf)
-	}
 	// to be removed....
-	if msg.Truncated || len(header)+len(buf)-n > 0 {
-		go Debug(2, "[INPUT-RAW] message truncated, increase copy-buffer-size")
+	if msgTCP.Truncated {
+		Debug(2, "[INPUT-RAW] message truncated, increase copy-buffer-size")
 	}
 	// to be removed...
-	if msg.TimedOut {
-		go Debug(2, "[INPUT-RAW] message timeout reached, increase input-raw-expire")
+	if msgTCP.TimedOut {
+		Debug(2, "[INPUT-RAW] message timeout reached, increase input-raw-expire")
 	}
 	if i.Stats {
-		stat := msg.Stats
+		stat := msgTCP.Stats
 		go i.addStats(stat)
 	}
-	msg = nil
-	return n, nil
+	msgTCP = nil
+	return &msg, nil
 }
 
 func (i *RAWInput) listen(address string) {

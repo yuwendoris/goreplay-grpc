@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"io"
 	"log"
 	"net"
 	"sync"
@@ -11,9 +10,7 @@ import (
 )
 
 func TestTCPOutput(t *testing.T) {
-	Settings.Verbose = 2
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	listener := startTCP(func(data []byte) {
 		wg.Done()
@@ -22,12 +19,11 @@ func TestTCPOutput(t *testing.T) {
 	output := NewTCPOutput(listener.Addr().String(), &TCPOutputConfig{Workers: 10})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
-	plugins.All = append(plugins.All, input, output)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 10; i++ {
@@ -68,7 +64,6 @@ func startTCP(cb func([]byte)) net.Listener {
 
 func BenchmarkTCPOutput(b *testing.B) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	listener := startTCP(func(data []byte) {
 		wg.Done()
@@ -82,12 +77,11 @@ func BenchmarkTCPOutput(b *testing.B) {
 	output := NewTCPOutput(listener.Addr().String(), &TCPOutputConfig{Workers: 10})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
-	plugins.All = append(plugins.All, input, output)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	// avoid counting above initialization
 	b.ResetTimer()
 	go emitter.Start(plugins, Settings.Middleware)
@@ -109,7 +103,7 @@ func TestStickyDisable(t *testing.T) {
 
 func TestBufferDistribution(t *testing.T) {
 	numberOfWorkers := 10
-	numberOfMessages := 1000000
+	numberOfMessages := 10000
 	percentDistributionErrorRange := 20
 
 	buffer := make([]int, numberOfWorkers)

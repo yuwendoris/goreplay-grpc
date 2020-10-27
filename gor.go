@@ -74,7 +74,7 @@ func main() {
 	}
 
 	closeCh := make(chan int)
-	emitter := NewEmitter(closeCh)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 	if Settings.ExitAfter > 0 {
 		log.Printf("Running gor for a duration of %s\n", Settings.ExitAfter)

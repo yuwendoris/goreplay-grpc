@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"hash/fnv"
-	"io"
 	"net"
 	"time"
 )
@@ -15,7 +14,7 @@ import (
 type TCPOutput struct {
 	address     string
 	limit       int
-	buf         []chan []byte
+	buf         []chan *Message
 	bufStats    *GorStat
 	config      *TCPOutputConfig
 	workerIndex uint32
@@ -31,7 +30,7 @@ type TCPOutputConfig struct {
 
 // NewTCPOutput constructor for TCPOutput
 // Initialize X workers which hold keep-alive connection
-func NewTCPOutput(address string, config *TCPOutputConfig) io.Writer {
+func NewTCPOutput(address string, config *TCPOutputConfig) PluginWriter {
 	o := new(TCPOutput)
 
 	o.address = address
@@ -42,9 +41,9 @@ func NewTCPOutput(address string, config *TCPOutputConfig) io.Writer {
 	}
 
 	// create X buffers and send the buffer index to the worker
-	o.buf = make([]chan []byte, o.config.Workers)
+	o.buf = make([]chan *Message, o.config.Workers)
 	for i := 0; i < o.config.Workers; i++ {
-		o.buf[i] = make(chan []byte, 100)
+		o.buf[i] = make(chan *Message, 100)
 		go o.worker(i)
 	}
 
@@ -73,14 +72,16 @@ func (o *TCPOutput) worker(bufferIndex int) {
 	defer conn.Close()
 
 	for {
-		data := <-o.buf[bufferIndex]
-		if _, err = conn.Write(data); err == nil {
-			_, err = conn.Write([]byte(payloadSeparator))
+		msg := <-o.buf[bufferIndex]
+		if _, err = conn.Write(msg.Meta); err == nil {
+			if _, err = conn.Write(msg.Data); err == nil {
+				_, err = conn.Write(payloadSeparatorAsBytes)
+			}
 		}
 
 		if err != nil {
 			Debug(2, "INFO: TCP output connection closed, reconnecting")
-			o.buf[bufferIndex] <- data
+			o.buf[bufferIndex] <- msg
 			go o.worker(bufferIndex)
 			break
 		}
@@ -99,23 +100,20 @@ func (o *TCPOutput) getBufferIndex(data []byte) int {
 
 }
 
-func (o *TCPOutput) Write(data []byte) (n int, err error) {
-	if !isOriginPayload(data) {
-		return len(data), nil
+// PluginWrite writes message to this plugin
+func (o *TCPOutput) PluginWrite(msg *Message) (n int, err error) {
+	if !isOriginPayload(msg.Meta) {
+		return len(msg.Data), nil
 	}
 
-	// We have to copy, because sending data in multiple threads
-	newBuf := make([]byte, len(data))
-	copy(newBuf, data)
-
-	bufferIndex := o.getBufferIndex(data)
-	o.buf[bufferIndex] <- newBuf
+	bufferIndex := o.getBufferIndex(msg.Data)
+	o.buf[bufferIndex] <- msg
 
 	if Settings.OutputTCPStats {
 		o.bufStats.Write(len(o.buf[bufferIndex]))
 	}
 
-	return len(data), nil
+	return len(msg.Data) + len(msg.Meta), nil
 }
 
 func (o *TCPOutput) connect(address string) (conn net.Conn, err error) {

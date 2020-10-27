@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net/http"
@@ -59,14 +58,14 @@ type HTTPOutput struct {
 	elasticSearch *ESPlugin
 	client        *HTTPClient
 	stopWorker    chan struct{}
-	queue         chan []byte
+	queue         chan *Message
 	responses     chan response
 	stop          chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewHTTPOutput constructor for HTTPOutput
 // Initialize workers
-func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
+func NewHTTPOutput(address string, config *HTTPOutputConfig) PluginReadWriter {
 	o := new(HTTPOutput)
 	var err error
 	config.url, err = url.Parse(address)
@@ -110,7 +109,7 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) io.Writer {
 		o.queueStats = NewGorStat("output_http", o.config.StatsMs)
 	}
 
-	o.queue = make(chan []byte, o.config.QueueLen)
+	o.queue = make(chan *Message, o.config.QueueLen)
 	o.responses = make(chan response, o.config.QueueLen)
 	// it should not be buffered to avoid races
 	o.stopWorker = make(chan struct{})
@@ -160,23 +159,22 @@ func (o *HTTPOutput) startWorker() {
 		select {
 		case <-o.stopWorker:
 			return
-		case data := <-o.queue:
-			o.sendRequest(o.client, data)
+		case msg := <-o.queue:
+			o.sendRequest(o.client, msg)
 		}
 	}
 }
 
-func (o *HTTPOutput) Write(data []byte) (n int, err error) {
-	if !isRequestPayload(data) {
-		return len(data), nil
+// PluginWrite writes message to this plugin
+func (o *HTTPOutput) PluginWrite(msg *Message) (n int, err error) {
+	if !isRequestPayload(msg.Meta) {
+		return len(msg.Data), nil
 	}
 
-	buf := make([]byte, len(data))
-	copy(buf, data)
 	select {
 	case <-o.stop:
 		return 0, ErrorStopped
-	case o.queue <- buf:
+	case o.queue <- msg:
 	}
 
 	if o.config.Stats {
@@ -189,42 +187,39 @@ func (o *HTTPOutput) Write(data []byte) (n int, err error) {
 			atomic.AddInt32(&o.activeWorkers, 1)
 		}
 	}
-	return len(data), nil
+	return len(msg.Data) + len(msg.Meta), nil
 }
 
-func (o *HTTPOutput) Read(data []byte) (int, error) {
+// PluginRead reads message from this plugin
+func (o *HTTPOutput) PluginRead() (*Message, error) {
 	var resp response
+	var msg Message
 	select {
 	case <-o.stop:
-		return 0, ErrorStopped
+		return nil, ErrorStopped
 	case resp = <-o.responses:
+		msg.Data = resp.payload
 	}
 
-	header := payloadHeader(ReplayedResponsePayload, resp.uuid, resp.roundTripTime, resp.startedAt)
-	n := copy(data, header)
-	if len(data) > len(header) {
-		n += copy(data[len(header):], resp.payload)
-	}
-	dis := len(header) + len(data) - n
-	if dis > 0 {
-		Debug(2, fmt.Sprintf("[OUTPUT-HTTP] %dB discarded increase copy buffer size", dis))
-	}
+	msg.Meta = payloadHeader(ReplayedResponsePayload, resp.uuid, resp.roundTripTime, resp.startedAt)
 
-	return n, nil
+	return &msg, nil
 }
 
-func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
-	if !isRequestPayload(request) {
+func (o *HTTPOutput) sendRequest(client *HTTPClient, msg *Message) {
+	if !isRequestPayload(msg.Meta) {
 		return
 	}
-	uuid := payloadID(request)
-	body := payloadBody(request)
+	uuid := payloadID(msg.Meta)
 	start := time.Now()
-	resp, err := client.Send(body)
+	resp, err := client.Send(msg.Data)
 	stop := time.Now()
 
 	if err != nil {
 		Debug(1, fmt.Sprintf("[HTTP-OUTPUT] error when sending: %q", err))
+		return
+	}
+	if resp == nil {
 		return
 	}
 
@@ -233,7 +228,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, request []byte) {
 	}
 
 	if o.elasticSearch != nil {
-		o.elasticSearch.ResponseAnalyze(request, resp, start, stop)
+		o.elasticSearch.ResponseAnalyze(msg.Data, resp, start, stop)
 	}
 }
 
