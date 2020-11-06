@@ -12,25 +12,22 @@ import (
 )
 
 func prettifyHTTP(p []byte) []byte {
-	headSize := bytes.IndexByte(p, '\n') + 1
-	head := p[:headSize]
-	body := p[headSize:]
 
-	tEnc := bytes.Equal(proto.Header(body, []byte("Transfer-Encoding")), []byte("chunked"))
-	cEnc := bytes.Equal(proto.Header(body, []byte("Content-Encoding")), []byte("gzip"))
+	tEnc := bytes.Equal(proto.Header(p, []byte("Transfer-Encoding")), []byte("chunked"))
+	cEnc := bytes.Equal(proto.Header(p, []byte("Content-Encoding")), []byte("gzip"))
 
 	if !(tEnc || cEnc) {
 		return p
 	}
 
-	headersPos := proto.MIMEHeadersEndPos(body)
+	headersPos := proto.MIMEHeadersEndPos(p)
 
-	if headersPos < 5 || headersPos > len(body) {
+	if headersPos < 5 || headersPos > len(p) {
 		return p
 	}
 
-	headers := body[:headersPos]
-	content := body[headersPos:]
+	headers := p[:headersPos]
+	content := p[headersPos:]
 
 	if tEnc {
 		buf := bytes.NewReader(content)
@@ -64,7 +61,7 @@ func prettifyHTTP(p []byte) []byte {
 		headers = proto.SetHeader(headers, []byte("Content-Length"), []byte(newLen))
 	}
 
-	newPayload := append(append(head, headers...), content...)
+	newPayload := append(headers, content...)
 
 	return newPayload
 }

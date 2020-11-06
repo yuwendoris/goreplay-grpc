@@ -15,6 +15,7 @@ type KafkaInput struct {
 	config    *InputKafkaConfig
 	consumers []sarama.PartitionConsumer
 	messages  chan *sarama.ConsumerMessage
+	quit      chan struct{}
 }
 
 // NewKafkaInput creates instance of kafka consumer client with TLS config
@@ -43,6 +44,7 @@ func NewKafkaInput(address string, config *InputKafkaConfig, tlsConfig *KafkaTLS
 		config:    config,
 		consumers: make([]sarama.PartitionConsumer, len(partitions)),
 		messages:  make(chan *sarama.ConsumerMessage, 256),
+		quit:      make(chan struct{}),
 	}
 
 	for index, partition := range partitions {
@@ -74,29 +76,45 @@ func (i *KafkaInput) ErrorHandler(consumer sarama.PartitionConsumer) {
 	}
 }
 
-func (i *KafkaInput) Read(data []byte) (int, error) {
-	message := <-i.messages
-
-	if !i.config.UseJSON {
-		copy(data, message.Value)
-		return len(message.Value), nil
+// PluginRead a reads message from this plugin
+func (i *KafkaInput) PluginRead() (*Message, error) {
+	var message *sarama.ConsumerMessage
+	var msg Message
+	select {
+	case <-i.quit:
+		return nil, ErrorStopped
+	case message = <-i.messages:
 	}
 
-	var kafkaMessage KafkaMessage
-	json.Unmarshal(message.Value, &kafkaMessage)
+	msg.Data = message.Value
+	if i.config.UseJSON {
 
-	buf, err := kafkaMessage.Dump()
-	if err != nil {
-		Debug(1, "Failed to decode access log entry:", err)
-		return 0, err
+		var kafkaMessage KafkaMessage
+		json.Unmarshal(message.Value, &kafkaMessage)
+
+		var err error
+		msg.Data, err = kafkaMessage.Dump()
+		if err != nil {
+			Debug(1, "[INPUT-KAFKA] failed to decode access log entry:", err)
+			return nil, err
+		}
 	}
 
-	n := copy(data, buf)
+	// does it have meta
+	if isOriginPayload(msg.Data) {
+		msg.Meta, msg.Data = payloadMetaWithBody(msg.Data)
+	}
 
-	return n, nil
+	return &msg, nil
 
 }
 
 func (i *KafkaInput) String() string {
 	return "Kafka Input: " + i.config.Host + "/" + i.config.Topic
+}
+
+// Close closes this plugin
+func (i *KafkaInput) Close() error {
+	close(i.quit)
+	return nil
 }

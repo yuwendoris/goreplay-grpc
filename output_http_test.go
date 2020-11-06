@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +11,6 @@ import (
 
 func TestHTTPOutput(t *testing.T) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	input := NewTestInput()
 
@@ -38,27 +36,27 @@ func TestHTTPOutput(t *testing.T) {
 	}))
 	defer server.Close()
 
-	headers := HTTPHeaders{HTTPHeader{"User-Agent", "Gor"}}
+	headers := HTTPHeaders{httpHeader{"User-Agent", "Gor"}}
 	methods := HTTPMethods{[]byte("GET"), []byte("PUT"), []byte("POST")}
 	Settings.ModifierConfig = HTTPModifierConfig{Headers: headers, Methods: methods}
 
-	httpOutput := NewHTTPOutput(server.URL, &HTTPOutputConfig{TrackResponses: true})
-	output := NewTestOutput(func(data []byte) {
+	httpOutput := NewHTTPOutput(server.URL, &HTTPOutputConfig{TrackResponses: false})
+	output := NewTestOutput(func(*Message) {
 		wg.Done()
 	})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{httpOutput, output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{httpOutput, output},
 	}
 	plugins.All = append(plugins.All, input, output, httpOutput)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < 10; i++ {
-		// 2 http-output, 2 - test output request, 2 - test output http response
-		wg.Add(6) // OPTIONS should be ignored
+		// 2 http-output, 2 - test output request
+		wg.Add(4) // OPTIONS should be ignored
 		input.EmitPOST()
 		input.EmitOPTIONS()
 		input.EmitGET()
@@ -72,7 +70,6 @@ func TestHTTPOutput(t *testing.T) {
 
 func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	input := NewTestInput()
 
@@ -85,18 +82,18 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 	}))
 	defer server.Close()
 
-	headers := HTTPHeaders{HTTPHeader{"Host", "custom-host.com"}}
+	headers := HTTPHeaders{httpHeader{"Host", "custom-host.com"}}
 	Settings.ModifierConfig = HTTPModifierConfig{Headers: headers}
 
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{OriginalHost: true, SkipVerify: true})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	wg.Add(1)
@@ -109,7 +106,6 @@ func TestHTTPOutputKeepOriginalHost(t *testing.T) {
 
 func TestHTTPOutputSSL(t *testing.T) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	// Origing and Replay server initialization
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,12 +116,12 @@ func TestHTTPOutputSSL(t *testing.T) {
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{SkipVerify: true})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	wg.Add(2)
@@ -139,7 +135,6 @@ func TestHTTPOutputSSL(t *testing.T) {
 
 func TestHTTPOutputSessions(t *testing.T) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	input := NewTestInput()
 	input.skipHeader = true
@@ -150,25 +145,27 @@ func TestHTTPOutputSessions(t *testing.T) {
 	defer server.Close()
 
 	Settings.RecognizeTCPSessions = true
+	Settings.SplitOutput = true
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
-	emitter := NewEmitter(quit)
+	plugins.All = append(plugins.All, input, output)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	uuid1 := []byte("1234567890123456789a0000")
 	uuid2 := []byte("1234567890123456789d0000")
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1) // OPTIONS should be ignored
 		copy(uuid1[20:], randByte(4))
 		input.EmitBytes([]byte("1 " + string(uuid1) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
 	}
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		wg.Add(1) // OPTIONS should be ignored
 		copy(uuid2[20:], randByte(4))
 		input.EmitBytes([]byte("1 " + string(uuid2) + " 1\n" + "GET / HTTP/1.1\r\n\r\n"))
@@ -179,11 +176,11 @@ func TestHTTPOutputSessions(t *testing.T) {
 	emitter.Close()
 
 	Settings.RecognizeTCPSessions = false
+	Settings.SplitOutput = false
 }
 
 func BenchmarkHTTPOutput(b *testing.B) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wg.Done()
@@ -194,12 +191,12 @@ func BenchmarkHTTPOutput(b *testing.B) {
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{WorkersMax: 1})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < b.N; i++ {
@@ -213,7 +210,6 @@ func BenchmarkHTTPOutput(b *testing.B) {
 
 func BenchmarkHTTPOutputTLS(b *testing.B) {
 	wg := new(sync.WaitGroup)
-	quit := make(chan int)
 
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wg.Done()
@@ -224,12 +220,12 @@ func BenchmarkHTTPOutputTLS(b *testing.B) {
 	output := NewHTTPOutput(server.URL, &HTTPOutputConfig{SkipVerify: true, WorkersMax: 1})
 
 	plugins := &InOutPlugins{
-		Inputs:  []io.Reader{input},
-		Outputs: []io.Writer{output},
+		Inputs:  []PluginReader{input},
+		Outputs: []PluginWriter{output},
 	}
 	plugins.All = append(plugins.All, input, output)
 
-	emitter := NewEmitter(quit)
+	emitter := NewEmitter()
 	go emitter.Start(plugins, Settings.Middleware)
 
 	for i := 0; i < b.N; i++ {

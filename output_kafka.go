@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"io"
 	"log"
 	"strings"
 	"time"
@@ -24,7 +23,7 @@ type KafkaOutput struct {
 const KafkaOutputFrequency = 500
 
 // NewKafkaOutput creates instance of kafka producer client  with TLS config
-func NewKafkaOutput (address string, config *OutputKafkaConfig, tlsConfig *KafkaTLSConfig) io.Writer {
+func NewKafkaOutput(address string, config *OutputKafkaConfig, tlsConfig *KafkaTLSConfig) PluginWriter {
 	c := NewKafkaConfig(tlsConfig)
 
 	var producer sarama.AsyncProducer
@@ -63,20 +62,21 @@ func (o *KafkaOutput) ErrorHandler() {
 	}
 }
 
-func (o *KafkaOutput) Write(data []byte) (n int, err error) {
+// PluginWrite writes a message to this plugin
+func (o *KafkaOutput) PluginWrite(msg *Message) (n int, err error) {
 	var message sarama.StringEncoder
 
 	if !o.config.UseJSON {
-		message = sarama.StringEncoder(byteutils.SliceToString(data))
+		message = sarama.StringEncoder(byteutils.SliceToString(msg.Meta) + byteutils.SliceToString(msg.Data))
 	} else {
-		mimeHeader := proto.ParseHeaders(data)
+		mimeHeader := proto.ParseHeaders(msg.Data)
 		var header map[string]string
 		for k, v := range mimeHeader {
 			header[k] = strings.Join(v, ", ")
 		}
 
-		meta := payloadMeta(data)
-		req := payloadBody(data)
+		meta := payloadMeta(msg.Meta)
+		req := msg.Data
 
 		kafkaMessage := KafkaMessage{
 			ReqURL:     byteutils.SliceToString(proto.Path(req)),

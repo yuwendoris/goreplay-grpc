@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -9,32 +10,29 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"sync"
 )
 
 // Middleware represents a middleware object
 type Middleware struct {
-	command string
-
-	data chan []byte
-
-	mu sync.Mutex
-
-	Stdin  io.Writer
-	Stdout io.Reader
-
-	stop chan bool // Channel used only to indicate goroutine should shutdown
+	command       string
+	data          chan *Message
+	Stdin         io.Writer
+	Stdout        io.Reader
+	commandCancel context.CancelFunc
+	stop          chan bool // Channel used only to indicate goroutine should shutdown
 }
 
 // NewMiddleware returns new middleware
 func NewMiddleware(command string) *Middleware {
 	m := new(Middleware)
 	m.command = command
-	m.data = make(chan []byte, 1000)
+	m.data = make(chan *Message, 1000)
 	m.stop = make(chan bool)
 
 	commands := strings.Split(command, " ")
-	cmd := exec.Command(commands[0], commands[1:]...)
+	ctx, cancl := context.WithCancel(context.Background())
+	m.commandCancel = cancl
+	cmd := exec.CommandContext(ctx, commands[0], commands[1:]...)
 
 	m.Stdout, _ = cmd.StdoutPipe()
 	m.Stdin, _ = cmd.StdinPipe()
@@ -61,45 +59,32 @@ func NewMiddleware(command string) *Middleware {
 }
 
 // ReadFrom start a worker to read from this plugin
-func (m *Middleware) ReadFrom(plugin io.Reader) {
+func (m *Middleware) ReadFrom(plugin PluginReader) {
 	Debug(2, "[MIDDLEWARE-MASTER] Starting reading from", plugin)
 	go m.copy(m.Stdin, plugin)
 }
 
-func (m *Middleware) copy(to io.Writer, from io.Reader) {
-	buf := make([]byte, 5*1024*1024)
-	dst := make([]byte, len(buf)*4)
+func (m *Middleware) copy(to io.Writer, from PluginReader) {
+	var buf, dst []byte
 
 	for {
-		nr, _ := from.Read(buf)
-		if nr == 0 || nr > len(buf) {
+		msg, err := from.PluginRead()
+		if err != nil {
+			return
+		}
+		if msg == nil || len(msg.Data) == 0 {
 			continue
 		}
 
-		payload := buf[0:nr]
-
 		if Settings.PrettifyHTTP {
-			payload = prettifyHTTP(payload)
-			nr = len(payload)
-
-			if nr*2 > len(dst) {
-				continue
-			}
+			buf = prettifyHTTP(msg.Data)
 		}
+		dst = make([]byte, len(buf)*2+1)
+		hex.Encode(dst, buf)
+		dst[len(buf)*2] = '\n'
 
-		if Settings.PrettifyHTTP {
-			payload = prettifyHTTP(payload)
-			nr = len(payload)
-		}
+		to.Write(dst)
 
-		hex.Encode(dst, payload)
-		dst[nr*2] = '\n'
-
-		m.mu.Lock()
-		to.Write(dst[0 : nr*2+1])
-		m.mu.Unlock()
-
-		Debug(3, "[MIDDLEWARE-MASTER] Sending:", string(buf[0:nr]), "From:", from)
 	}
 }
 
@@ -117,41 +102,41 @@ func (m *Middleware) read(from io.Reader) {
 			}
 		}
 
-		buf := make([]byte, len(line)/2)
+		buf := make([]byte, len(line)/2-1)
 		if _, err := hex.Decode(buf, line[:len(line)-1]); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to decode input payload", err, len(line), string(line[:len(line)-1]))
+			Debug(0, fmt.Sprintf("[MIDDLEWARE] failed to decode err: %q", err))
+			continue
 		}
-
-		Debug(3, "[MIDDLEWARE-MASTER] Received:", string(buf))
-
+		var msg Message
+		msg.Meta, msg.Data = payloadMetaWithBody(buf)
 		select {
 		case <-m.stop:
 			return
-		case m.data <- buf:
+		case m.data <- &msg:
 		}
 	}
 
 	return
 }
 
-func (m *Middleware) Read(data []byte) (int, error) {
-	var buf []byte
+// PluginRead reads message from this plugin
+func (m *Middleware) PluginRead() (msg *Message, err error) {
 	select {
 	case <-m.stop:
-		return 0, ErrorStopped
-	case buf = <-m.data:
+		return nil, ErrorStopped
+	case msg = <-m.data:
 	}
 
-	n := copy(data, buf)
-	return n, nil
+	return
 }
 
 func (m *Middleware) String() string {
-	return fmt.Sprintf("Modifying traffic using '%s' command", m.command)
+	return fmt.Sprintf("Modifying traffic using %q command", m.command)
 }
 
 // Close closes this plugin
 func (m *Middleware) Close() error {
+	m.commandCancel()
 	close(m.stop)
 	return nil
 }
