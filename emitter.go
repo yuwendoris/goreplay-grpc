@@ -13,7 +13,6 @@ import (
 
 // Emitter represents an abject to manage plugins communication
 type Emitter struct {
-	sync.Mutex
 	sync.WaitGroup
 	plugins *InOutPlugins
 }
@@ -25,7 +24,6 @@ func NewEmitter() *Emitter {
 
 // Start initialize loop for sending data from inputs to outputs
 func (e *Emitter) Start(plugins *InOutPlugins, middlewareCmd string) {
-	defer e.Wait()
 	if Settings.CopyBufferSize < 1 {
 		Settings.CopyBufferSize = 5 << 20
 	}
@@ -67,7 +65,11 @@ func (e *Emitter) Close() {
 			cp.Close()
 		}
 	}
-	e.plugins.All = nil // avoid further accidental close
+	if len(e.plugins.All) > 0 {
+		// wait for everything to stop
+		e.Wait()
+	}
+	e.plugins.All = nil // avoid Close to make changes again
 }
 
 // CopyMulty copies from 1 reader to multiple writers
@@ -146,11 +148,7 @@ func CopyMulty(src PluginReader, writers ...PluginWriter) error {
 						return err
 					}
 
-					wIndex++
-
-					if wIndex >= len(writers) {
-						wIndex = 0
-					}
+					wIndex = (wIndex + 1) % len(writers)
 				}
 			} else {
 				for _, dst := range writers {

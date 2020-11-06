@@ -59,7 +59,7 @@ type HTTPOutput struct {
 	client        *HTTPClient
 	stopWorker    chan struct{}
 	queue         chan *Message
-	responses     chan response
+	responses     chan *response
 	stop          chan bool // Channel used only to indicate goroutine should shutdown
 }
 
@@ -110,7 +110,9 @@ func NewHTTPOutput(address string, config *HTTPOutputConfig) PluginReadWriter {
 	}
 
 	o.queue = make(chan *Message, o.config.QueueLen)
-	o.responses = make(chan response, o.config.QueueLen)
+	if o.config.TrackResponses {
+		o.responses = make(chan *response, o.config.QueueLen)
+	}
 	// it should not be buffered to avoid races
 	o.stopWorker = make(chan struct{})
 
@@ -192,7 +194,10 @@ func (o *HTTPOutput) PluginWrite(msg *Message) (n int, err error) {
 
 // PluginRead reads message from this plugin
 func (o *HTTPOutput) PluginRead() (*Message, error) {
-	var resp response
+	if !o.config.TrackResponses {
+		return nil, ErrorStopped
+	}
+	var resp *response
 	var msg Message
 	select {
 	case <-o.stop:
@@ -224,7 +229,7 @@ func (o *HTTPOutput) sendRequest(client *HTTPClient, msg *Message) {
 	}
 
 	if o.config.TrackResponses {
-		o.responses <- response{resp, uuid, start.UnixNano(), stop.UnixNano() - start.UnixNano()}
+		o.responses <- &response{resp, uuid, start.UnixNano(), stop.UnixNano() - start.UnixNano()}
 	}
 
 	if o.elasticSearch != nil {

@@ -4,7 +4,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -80,7 +79,7 @@ func main() {
 		log.Printf("Running gor for a duration of %s\n", Settings.ExitAfter)
 
 		time.AfterFunc(Settings.ExitAfter, func() {
-			fmt.Printf("gor run timeout %s\n", Settings.ExitAfter)
+			log.Printf("gor run timeout %s\n", Settings.ExitAfter)
 			close(closeCh)
 		})
 	}

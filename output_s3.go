@@ -108,21 +108,22 @@ func (o *S3Output) onBufferUpdate(path string) {
 	idx := getFileIndex(path)
 	bucket, key := o.keyPath(idx)
 
-	file, _ := os.Open(path)
-	// reader := bufio.NewReader(file)
+	file, err := os.Open(path)
+	if err != nil {
+		Debug(0, fmt.Sprintf("[S3 Output] Failed to open file %q. err: %q", path, err))
+		return
+	}
+	defer os.Remove(path)
 
-	_, err := svc.PutObject(&s3.PutObjectInput{
+	_, err = svc.PutObject(&s3.PutObjectInput{
 		Body:   file,
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		log.Printf("[S3 Output] Failed to upload data to %s/%s, %s\n", bucket, key, err)
-		os.Remove(path)
+		Debug(0, fmt.Sprintf("[S3 Output] Failed to upload data to %q/%q, %q", bucket, key, err))
 		return
 	}
-
-	os.Remove(path)
 
 	if o.closeCh != nil {
 		o.closeCh <- struct{}{}
