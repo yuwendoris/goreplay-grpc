@@ -301,7 +301,12 @@ func (c *HTTPClient) Send(data []byte) ([]byte, error) {
 		req.Host = c.config.url.Host
 	}
 
-	req.URL, _ = url.ParseRequestURI(c.config.url.Scheme + "://" + c.config.url.Host + req.RequestURI)
+	if c.config.url.Path == "" {
+		req.URL, _ = url.ParseRequestURI(c.config.url.Scheme + "://" + c.config.url.Host + req.RequestURI)
+	} else {
+		req.URL = c.config.url
+	}
+	
 	// force connection to not be closed, which can affect the global client
 	req.Close = false
 	// it's an error if this is not equal to empty string
