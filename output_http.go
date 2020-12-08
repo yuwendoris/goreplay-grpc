@@ -300,9 +300,11 @@ func (c *HTTPClient) Send(data []byte) ([]byte, error) {
 	if !c.config.OriginalHost {
 		req.Host = c.config.url.Host
 	}
-
-	if c.config.url.Path == "" {
-		req.URL, _ = url.ParseRequestURI(c.config.url.Scheme + "://" + c.config.url.Host + req.RequestURI)
+	
+	// fix #862
+	if c.config.url.Path == "" && c.config.url.RawQuery == "" {
+		req.URL.Scheme = c.config.url.Scheme
+		req.URL.Host = c.config.url.Host
 	} else {
 		req.URL = c.config.url
 	}
