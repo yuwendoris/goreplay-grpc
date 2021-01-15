@@ -76,6 +76,7 @@ func (m *Middleware) copy(to io.Writer, from PluginReader) {
 			continue
 		}
 
+		buf = msg.Data
 		if Settings.PrettifyHTTP {
 			buf = prettifyHTTP(msg.Data)
 		}
