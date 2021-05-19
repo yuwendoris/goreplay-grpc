@@ -3,17 +3,20 @@ package tcp
 import (
 	"bytes"
 	"encoding/binary"
+
+	// "runtime"
 	"testing"
 	"time"
 
-	"github.com/buger/goreplay/capture"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/buger/goreplay/proto"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 )
 
-func generateHeader(seq uint32, length uint16) []byte {
-	hdr := make([]byte, 4+24+24, 4+24+24)
+func generateHeader(request bool, seq uint32, length uint16) []byte {
+	hdr := make([]byte, 4+24+24)
 	binary.BigEndian.PutUint32(hdr, uint32(layers.ProtocolFamilyIPv4))
 
 	ip := hdr[4:]
@@ -26,44 +29,154 @@ func generateHeader(seq uint32, length uint16) []byte {
 	// set tcp header
 	tcp := ip[24:]
 	tcp[12] = 6 << 4
-	binary.BigEndian.PutUint16(tcp, 5535)
-	binary.BigEndian.PutUint16(tcp[2:], 8000)
+
+	if request {
+		binary.BigEndian.PutUint16(tcp, 5535)
+		binary.BigEndian.PutUint16(tcp[2:], 8000)
+	} else {
+		binary.BigEndian.PutUint16(tcp, 8000)
+		binary.BigEndian.PutUint16(tcp[2:], 5535)
+	}
 	binary.BigEndian.PutUint32(tcp[4:], seq)
 	return hdr
 }
 
-func GetPackets(start uint32, _len int, payload []byte) []*capture.Packet {
-	var packets = make([]*capture.Packet, _len)
+func GetPackets(request bool, start uint32, _len int, payload []byte) []*Packet {
+	var packets = make([]*Packet, _len)
 	for i := start; i < start+uint32(_len); i++ {
-		d := append(generateHeader(i, uint16(len(payload))), payload...)
+		d := append(generateHeader(request, i, uint16(len(payload))), payload...)
 		ci := &gopacket.CaptureInfo{Length: len(d), CaptureLength: len(d), Timestamp: time.Now()}
-		packets[i-start] = capture.NewPacket(d, int(layers.LinkTypeLoop), 4, ci)
+
+		if len(payload) > 0 {
+			packets[i-start], _ = ParsePacket(d, int(layers.LinkTypeLoop), 4, ci)
+		} else {
+			packets[i-start] = new(Packet)
+		}
 	}
 	return packets
 }
 
-func TestMessageParserWithHint(t *testing.T) {
-	var mssg = make(chan *Message, 3)
-	pool := NewMessagePool(1<<20, time.Second, nil, func(m *Message) { mssg <- m })
-	pool.Start = func(pckt *Packet) (bool, bool) {
+func TestRequestResponseMapping(t *testing.T) {
+	packets := []*Packet{
+		{SrcPort: 60000, DstPort: 80, Ack: 1, Seq: 1, Timestamp: time.Unix(1, 0), Payload: []byte("GET / HTTP/1.1\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 1, Seq: 17, Timestamp: time.Unix(2, 0), Payload: []byte("Host: localhost\r\n\r\n")},
+
+		// Seq of first response packet match Ack of first request packet
+		{SrcPort: 80, DstPort: 60000, Ack: 36, Seq: 1, Timestamp: time.Unix(3, 0), Payload: []byte("HTTP/1.1 200 OK\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 36, Seq: 18, Timestamp: time.Unix(4, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
+
+		// Same TCP stream
+		{SrcPort: 60000, DstPort: 80, Ack: 39, Seq: 36, Timestamp: time.Unix(5, 0), Payload: []byte("GET / HTTP/1.1\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 39, Seq: 52, Timestamp: time.Unix(6, 0), Payload: []byte("Host: localhost\r\n\r\n")},
+
+		// Seq of first response packet match Ack of first request packet
+		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 39, Timestamp: time.Unix(7, 0), Payload: []byte("HTTP/1.1 200 OK\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 56, Timestamp: time.Unix(8, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
+	}
+
+	var mssg = make(chan *Message, 4)
+	parser := NewMessageParser(1<<20, time.Second, nil, func(m *Message) { mssg <- m })
+	parser.Start = func(pckt *Packet) (bool, bool) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
-	pool.End = func(m *Message) bool {
-		return proto.HasFullPayload(m.Data(), m)
+	parser.End = func(m *Message) bool {
+		return proto.HasFullPayload(m, m.Data())
 	}
-	packets := GetPackets(1, 30, nil)
-	packets[0].TransLayer[13] = 2  // SYN flag
-	packets[10].TransLayer[13] = 2 // SYN flag
-	packets[29].TransLayer[13] = 1 // FIN flag
-	packets[4] = GetPackets(5, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7"))[0]
-	packets[5] = GetPackets(6, 1, []byte("\r\nMozilla\r\n9\r\nDeveloper\r"))[0]
-	packets[6] = GetPackets(7, 1, []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))[0]
-	packets[14] = GetPackets(5, 1, []byte("POST / HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\n"))[0]
-	packets[15] = GetPackets(6, 1, []byte("MozillaDeveloper"))[0]
-	packets[16] = GetPackets(7, 1, []byte("Network"))[0]
-	packets[24] = GetPackets(5, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r"))[0]
+
+	for _, packet := range packets {
+		parser.PacketHandler(packet)
+	}
+
+	messages := []*Message{}
+	for i := 0; i < 4; i++ {
+		select {
+		case <-time.After(time.Second):
+			t.Errorf("can't parse packets fast enough")
+			return
+		case m := <-mssg:
+			messages = append(messages, m)
+		}
+	}
+
+	assert.Equal(t, messages[0].IsRequest, true)
+	assert.Equal(t, messages[1].IsRequest, false)
+	assert.Equal(t, messages[2].IsRequest, true)
+	assert.Equal(t, messages[3].IsRequest, false)
+
+	assert.Equal(t, messages[0].UUID(), messages[1].UUID())
+	assert.Equal(t, messages[2].UUID(), messages[3].UUID())
+
+	assert.NotEqual(t, messages[0].UUID(), messages[2].UUID())
+}
+
+func TestMessageParserWithHint(t *testing.T) {
+	var mssg = make(chan *Message, 3)
+	parser := NewMessageParser(1<<20, time.Second, nil, func(m *Message) { mssg <- m })
+	parser.Start = func(pckt *Packet) (bool, bool) {
+		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
+	}
+	parser.End = func(m *Message) bool {
+		return proto.HasFullPayload(m, m.Data())
+	}
+	packets := GetPackets(true, 1, 30, nil)
+	packets[4] = GetPackets(false, 4, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7"))[0]
+	packets[5] = GetPackets(false, 5, 1, []byte("\r\nMozilla\r\n9\r\nDeveloper\r"))[0]
+	packets[6] = GetPackets(false, 6, 1, []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))[0]
+	packets[14] = GetPackets(true, 14, 1, []byte("POST / HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\n"))[0]
+	packets[15] = GetPackets(true, 15, 1, []byte("MozillaDeveloper"))[0]
+	packets[16] = GetPackets(true, 16, 1, []byte("Network"))[0]
+	packets[24] = GetPackets(true, 24, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n"))[0]
+
 	for i := 0; i < 30; i++ {
-		pool.Handler(packets[i])
+		parser.PacketHandler(packets[i])
+	}
+
+	messages := []*Message{}
+	for i := 0; i < 3; i++ {
+		select {
+		case <-time.After(time.Second):
+			t.Errorf("can't parse packets fast enough")
+			return
+		case m := <-mssg:
+			messages = append(messages, m)
+		}
+	}
+
+	if !bytes.HasSuffix(messages[0].Data(), []byte("\n7\r\nNetwork\r\n0\r\n\r\n")) {
+		t.Errorf("expected to %q to have suffix %q", messages[0].Data(), []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))
+	}
+
+	if !bytes.HasSuffix(messages[1].Data(), []byte("Network")) {
+		t.Errorf("expected to %q to have suffix %q", messages[1].Data(), []byte("Network"))
+	}
+
+	if !bytes.HasSuffix(messages[2].Data(), []byte("Content-Length: 0\r\n\r\n")) {
+		t.Errorf("expected to %q to have suffix %q", messages[2].Data(), []byte("Content-Length: 0\r\n\r\n"))
+	}
+}
+
+func TestMessageParserWrongOrder(t *testing.T) {
+	var mssg = make(chan *Message, 3)
+	parser := NewMessageParser(1<<20, time.Second, nil, func(m *Message) { mssg <- m })
+	parser.Start = func(pckt *Packet) (bool, bool) {
+		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
+	}
+	parser.End = func(m *Message) bool {
+		return proto.HasFullPayload(m, m.Data())
+	}
+	packets := GetPackets(true, 1, 30, nil)
+	packets[6] = GetPackets(false, 4, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7"))[0]
+	packets[5] = GetPackets(false, 5, 1, []byte("\r\nMozilla\r\n9\r\nDeveloper\r"))[0]
+	packets[4] = GetPackets(false, 6, 1, []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))[0]
+	// Duplicate with same seq
+	packets[7] = GetPackets(false, 6, 1, []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))[0]
+
+	packets[16] = GetPackets(true, 14, 1, []byte("POST / HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\n"))[0]
+	packets[15] = GetPackets(true, 15, 1, []byte("MozillaDeveloper"))[0]
+	packets[14] = GetPackets(true, 16, 1, []byte("Network"))[0]
+
+	for i := 0; i < 30; i++ {
+		parser.PacketHandler(packets[i])
 	}
 	var m *Message
 	select {
@@ -85,28 +198,16 @@ func TestMessageParserWithHint(t *testing.T) {
 	if !bytes.HasSuffix(m.Data(), []byte("Network")) {
 		t.Errorf("expected to %q to have suffix %q", m.Data(), []byte("Network"))
 	}
-
-	select {
-	case <-time.After(time.Second):
-		t.Errorf("can't parse packets fast enough")
-		return
-	case m = <-mssg:
-	}
-	if !bytes.HasSuffix(m.Data(), []byte("Content-Length: 0\r\n\r")) {
-		t.Errorf("expected to %q to have suffix %q", m.Data(), []byte("Content-Length: 0\r\n\r"))
-	}
-
 }
 
 func TestMessageParserWithoutHint(t *testing.T) {
 	var mssg = make(chan *Message, 1)
 	var data [63 << 10]byte
-	packets := GetPackets(1, 10, data[:])
-	packets[0].TransLayer[13] = 2 // SYN flag
-	packets[9].TransLayer[13] = 1 // FIN flag
-	p := NewMessagePool(63<<10*10, time.Second, nil, func(m *Message) { mssg <- m })
+	packets := GetPackets(true, 1, 10, data[:])
+
+	p := NewMessageParser(63<<10*10, time.Second, nil, func(m *Message) { mssg <- m })
 	for _, v := range packets {
-		p.Handler(v)
+		p.PacketHandler(v)
 	}
 	var m *Message
 	select {
@@ -123,14 +224,12 @@ func TestMessageParserWithoutHint(t *testing.T) {
 func TestMessageMaxSizeReached(t *testing.T) {
 	var mssg = make(chan *Message, 2)
 	var data [63 << 10]byte
-	packets := GetPackets(1, 2, data[:])
-	packets = append(packets, GetPackets(3, 1, make([]byte, 63<<10+10))...)
-	packets[0].TransLayer[13] = 2 // SYN flag
-	packets[2].TransLayer[13] = 2 // SYN flag
-	packets[2].NetLayer[15] = 3   // changing address
-	p := NewMessagePool(63<<10+10, time.Second, nil, func(m *Message) { mssg <- m })
+	packets := GetPackets(true, 1, 2, data[:])
+	packets = append(packets, GetPackets(true, 1, 1, make([]byte, 63<<10+10))...)
+
+	p := NewMessageParser(63<<10+10, time.Second, nil, func(m *Message) { mssg <- m })
 	for _, v := range packets {
-		p.Handler(v)
+		p.PacketHandler(v)
 	}
 	var m *Message
 	select {
@@ -163,12 +262,11 @@ func TestMessageMaxSizeReached(t *testing.T) {
 func TestMessageTimeoutReached(t *testing.T) {
 	var mssg = make(chan *Message, 2)
 	var data [63 << 10]byte
-	packets := GetPackets(1, 2, data[:])
-	packets[0].TransLayer[13] = 2 // SYN flag
-	p := NewMessagePool(1<<20, 0, nil, func(m *Message) { mssg <- m })
-	p.Handler(packets[0])
-	time.Sleep(time.Millisecond * 200)
-	p.Handler(packets[1])
+	packets := GetPackets(true, 1, 2, data[:])
+	p := NewMessageParser(1<<20, 0, nil, func(m *Message) { mssg <- m })
+	p.PacketHandler(packets[0])
+	time.Sleep(time.Millisecond * 400)
+	p.PacketHandler(packets[1])
 	m := <-mssg
 	if m.Length != 63<<10 {
 		t.Errorf("expected %d to equal %d", m.Length, 63<<10)
@@ -179,22 +277,19 @@ func TestMessageTimeoutReached(t *testing.T) {
 }
 
 func TestMessageUUID(t *testing.T) {
-	packets := GetPackets(1, 10, nil)
-	packets[0].TransLayer[13] = 2 // SYN flag
-	packets[4].TransLayer[13] = 1 // FIN flag
-	packets[5].TransLayer[13] = 2 // SYN flag
-	packets[9].TransLayer[13] = 1 // FIN flag
+	packets := GetPackets(true, 1, 10, nil)
+
 	var uuid, uuid1 []byte
-	pool := NewMessagePool(0, 0, nil, func(msg *Message) {
+	parser := NewMessageParser(0, 0, nil, func(msg *Message) {
 		if len(uuid) == 0 {
 			uuid = msg.UUID()
 			return
 		}
 		uuid1 = msg.UUID()
 	})
-	pool.MatchUUID(true)
+
 	for _, p := range packets {
-		pool.Handler(p)
+		parser.PacketHandler(p)
 	}
 
 	if string(uuid) != string(uuid1) {
@@ -203,17 +298,15 @@ func TestMessageUUID(t *testing.T) {
 }
 
 func BenchmarkMessageUUID(b *testing.B) {
-	packets := GetPackets(1, 5, nil)
-	packets[0].TransLayer[13] = 2 // SYN flag
-	packets[4].TransLayer[13] = 1 // FIN flag
+	packets := GetPackets(true, 1, 5, nil)
+
 	var uuid []byte
 	var msg *Message
-	pool := NewMessagePool(0, 0, nil, func(m *Message) {
+	parser := NewMessageParser(0, 0, nil, func(m *Message) {
 		msg = m
 	})
-	pool.MatchUUID(true)
 	for _, p := range packets {
-		pool.Handler(p)
+		parser.PacketHandler(p)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -225,8 +318,8 @@ func BenchmarkMessageUUID(b *testing.B) {
 func BenchmarkPacketParseAndSort(b *testing.B) {
 	m := new(Message)
 	m.packets = make([]*Packet, 100)
-	for i, v := range GetPackets(1, 100, nil) {
-		m.packets[i], _ = ParsePacket(v)
+	for i, v := range GetPackets(true, 1, 100, nil) {
+		m.packets[i] = v
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -235,19 +328,18 @@ func BenchmarkPacketParseAndSort(b *testing.B) {
 }
 
 func BenchmarkMessageParserWithoutHint(b *testing.B) {
+	// runtime.GOMAXPROCS(8)
 	var mssg = make(chan *Message, 1)
 	var chunk = []byte("111111111111111111111111111111")
-	packets := GetPackets(1, 1000, chunk)
-	packets[0].TransLayer[13] = 2      // SYN flag
-	packets[1000-1].TransLayer[13] = 1 // FIN flag
-	p := NewMessagePool(1<<20, time.Second*2, nil, func(m *Message) {
+	packets := GetPackets(true, 1, 1000, chunk)
+	p := NewMessageParser(1<<20, time.Second*2, nil, func(m *Message) {
 		mssg <- m
 	})
 	b.ResetTimer()
 	b.ReportMetric(float64(1000), "packets/op")
 	for i := 0; i < b.N; i++ {
 		for _, v := range packets {
-			p.Handler(v)
+			p.PacketHandler(v)
 		}
 		<-mssg
 	}
@@ -261,46 +353,33 @@ func BenchmarkMessageParserWithHint(b *testing.B) {
 		buf[i] = chunk
 	}
 	buf[1001] = []byte("0\r\n\r\n")
-	packets := make([]*capture.Packet, len(buf))
+	packets := make([]*Packet, len(buf))
 	for i := 0; i < len(buf); i++ {
-		packets[i] = GetPackets(uint32(i+10), 1, buf[i])[0]
+		packets[i] = GetPackets(false, 1, 1, buf[i])[0]
 	}
 	var mssg = make(chan *Message, 1)
-	pool := NewMessagePool(1<<30, time.Second*10, nil, func(m *Message) { mssg <- m })
-	pool.Start = func(pckt *Packet) (bool, bool) {
+	parser := NewMessageParser(1<<30, time.Second*10, nil, func(m *Message) { mssg <- m })
+	parser.Start = func(pckt *Packet) (bool, bool) {
 		return false, proto.HasResponseTitle(pckt.Payload)
 	}
-	pool.End = func(m *Message) bool {
-		return proto.HasFullPayload(m.Data(), m)
+	parser.End = func(m *Message) bool {
+		return proto.HasFullPayload(m, m.Data())
 	}
 	b.ResetTimer()
 	b.ReportMetric(float64(len(packets)), "packets/op")
 	b.ReportMetric(float64(1000), "chunks/op")
 	for i := 0; i < b.N; i++ {
 		for j := range packets {
-			pool.Handler(packets[j])
+			parser.PacketHandler(packets[j])
 		}
 		<-mssg
 	}
 }
 
 func BenchmarkNewAndParsePacket(b *testing.B) {
-	data := append(generateHeader(1024, 10), make([]byte, 10)...)
+	data := append(generateHeader(true, 1024, 10), make([]byte, 10)...)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ParsePacket(capture.NewPacket(data, int(layers.LinkTypeLoop), 4, &gopacket.CaptureInfo{}))
-	}
-}
-
-func BenchmarkNewPacket(b *testing.B) {
-	packet := capture.NewPacket(
-		append(generateHeader(1024, 10), make([]byte, 10)...),
-		int(layers.LinkTypeLoop),
-		4,
-		&gopacket.CaptureInfo{},
-	)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		ParsePacket(packet)
+		ParsePacket(data, int(layers.LinkTypeLoop), 4, &gopacket.CaptureInfo{})
 	}
 }

@@ -58,10 +58,15 @@ func MIMEHeadersStartPos(payload []byte) int {
 // If not found, value will be blank, and headerStart will be -1
 // Do not support multi-line headers.
 func header(payload []byte, name []byte) (value []byte, headerStart, headerEnd, valueStart, valueEnd int) {
-	headerStart = MIMEHeadersStartPos(payload)
-	if headerStart < 0 {
-		return
+	if HasTitle(payload) {
+		headerStart = MIMEHeadersStartPos(payload)
+		if headerStart < 0 {
+			return
+		}
+	} else {
+		headerStart = 0
 	}
+
 	var colonIndex int
 	for headerStart < len(payload) {
 		headerEnd = bytes.IndexByte(payload[headerStart:], '\n')
@@ -398,140 +403,172 @@ func HasTitle(payload []byte) bool {
 	return HasRequestTitle(payload) || HasResponseTitle(payload)
 }
 
-// CheckChunked checks HTTP/1 chunked data integrity and return the final index
-// of chunks(index after '0\r\n\r\n') or -1 if there is missing data
-// or there is bad format
-func CheckChunked(buf []byte) (chunkEnd int) {
-	var (
-		ok     bool
-		chkLen int
-		sz     int
-		ext    int
-	)
-	for {
-		sz = bytes.IndexByte(buf[chunkEnd:], '\r')
+// CheckChunked checks HTTP/1 chunked data integrity(https://tools.ietf.org/html/rfc7230#section-4.1)
+// and returns the length of total valid scanned chunks(including chunk size, extensions and CRLFs) and
+// full is true if all chunks was scanned.
+func CheckChunked(bufs ...[]byte) (chunkEnd int, full bool) {
+	var buf []byte
+	if len(bufs) > 0 {
+		buf = bufs[0]
+	}
+	for chunkEnd < len(buf) {
+		sz := bytes.IndexByte(buf[chunkEnd:], '\r')
 		if sz < 1 {
-			return -1
+			break
 		}
-		// ignoring chunks extensions https://github.com/golang/go/issues/13135
-		// but chunks extensions are no longer a thing
-		ext = bytes.IndexByte(buf[chunkEnd:chunkEnd+sz], ';')
-		if ext < 0 {
-			ext = sz
+		// don't parse chunk extensions https://github.com/golang/go/issues/13135.
+		// chunks extensions are no longer a thing, but we do check if the byte
+		// following the parsed hex number is ';'
+		sz += chunkEnd
+		chkLen, ok := atoI(buf[chunkEnd:sz], 16)
+		if !ok && bytes.IndexByte(buf[chunkEnd:sz], ';') < 1 {
+			break
 		}
-		chkLen, ok = atoI(buf[chunkEnd:chunkEnd+ext], 16)
-		if !ok {
-			return -1
+		sz++ // + '\n'
+		// total length = SIZE + CRLF + OCTETS + CRLF
+		allChunk := sz + chkLen + 2
+		if allChunk >= len(buf) ||
+			buf[sz]&buf[allChunk] != '\n' ||
+			buf[allChunk-1] != '\r' {
+			break
 		}
-		chunkEnd += (sz + 2)
+		chunkEnd = allChunk + 1
 		if chkLen == 0 {
-			if !bytes.Equal(buf[chunkEnd:chunkEnd+2], CRLF) {
-				return -1
+			full = true
+			break
+		}
+	}
+	return
+}
+
+// ProtocolStateSetter is an interface used to provide protocol state for future use
+type ProtocolStateSetter interface {
+	SetProtocolState(interface{})
+	ProtocolState() interface{}
+}
+
+type httpProto struct {
+	body         int // body index
+	headerStart  int
+	headerParsed bool // we checked necessary headers
+	hasFullBody  bool // all chunks has been parsed
+	isChunked    bool // Transfer-Encoding: chunked
+	bodyLen      int  // Content-Length's value
+	hasTrailer   bool // Trailer header?
+}
+
+// HasFullPayload checks if this message has full or valid payloads and returns true.
+// Message param is optional but recommended on cases where 'data' is storing
+// partial-to-full stream of bytes(packets).
+func HasFullPayload(m ProtocolStateSetter, payloads ...[]byte) bool {
+	var state *httpProto
+	if m != nil {
+		state, _ = m.ProtocolState().(*httpProto)
+	}
+	if state == nil {
+		state = new(httpProto)
+		if m != nil {
+			m.SetProtocolState(state)
+		}
+	}
+	if state.headerStart < 1 {
+		for _, data := range payloads {
+			state.headerStart = MIMEHeadersStartPos(data)
+			if state.headerStart < 0 {
+				return false
+			} else {
+				break
 			}
-			return chunkEnd + 2
 		}
-		// ideally chunck length and at least len("\r\n0\r\n\r\n")
-		if len(buf[chunkEnd:]) < chkLen+7 {
-			return -1
-		}
-		chunkEnd += chkLen
-		// chunks must end with CRLF
-		if !bytes.Equal(buf[chunkEnd:chunkEnd+2], CRLF) {
-			return -1
-		}
-		chunkEnd += 2
-	}
-}
-
-// Feedback is an interface used to provide feedback or store dummy data for future use
-type Feedback interface {
-	SetFeedback(interface{})
-	Feedback() interface{}
-}
-
-type feedback struct {
-	body     int // body index
-	hdrStart int
-	headers  textproto.MIMEHeader
-}
-
-// HasFullPayload reports if this http has full payloads
-func HasFullPayload(data []byte, f Feedback) bool {
-	var feed *feedback
-	var ok bool
-	var body []byte
-	if f != nil {
-		feed, ok = f.Feedback().(*feedback)
-	}
-	if !ok {
-		feed = new(feedback)
-	}
-	if f != nil {
-		f.SetFeedback(feed)
-	}
-	if feed.hdrStart < 1 {
-		feed.hdrStart = MIMEHeadersStartPos(data)
-		if feed.hdrStart < 0 {
-			return false
-		}
-	}
-	if feed.body < 1 {
-		feed.body = MIMEHeadersEndPos(data)
-		if feed.body < 0 {
-			return false
-		}
-	}
-	if feed.headers == nil {
-		feed.headers = GetHeaders(data[feed.hdrStart:feed.body])
-		if feed.headers == nil {
-			return false
-		}
-	}
-	if len(data) > feed.body {
-		body = data[feed.body:]
 	}
 
-	if feed.headers.Get("Transfer-Encoding") == "chunked" {
+	if state.body < 1 {
+		var pos int
+		for _, data := range payloads {
+			endPos := MIMEHeadersEndPos(data)
+			if endPos < 0 {
+				pos += len(data)
+			} else {
+				pos += endPos
+			}
+
+			if endPos > 0 {
+				state.body = pos
+				break
+			}
+		}
+	}
+	if !state.headerParsed {
+		var pos int
+		for _, data := range payloads {
+			chunked := Header(data, []byte("Transfer-Encoding"))
+
+			if len(chunked) > 0 && bytes.Index(data, []byte("chunked")) > 0 {
+				state.isChunked = true
+				// trailers are generally not allowed in non-chunks body
+				state.hasTrailer = len(Header(data, []byte("Trailer"))) > 0
+			} else {
+				contentLen := Header(data, []byte("Content-Length"))
+				state.bodyLen, _ = atoI(contentLen, 10)
+			}
+
+			pos += len(data)
+
+			if state.bodyLen > 0 || pos >= state.body {
+				state.headerParsed = true
+				break
+			}
+		}
+	}
+
+	bodyLen := 0
+	for _, data := range payloads {
+		bodyLen += len(data)
+	}
+	bodyLen -= state.body
+
+	if state.isChunked {
 		// check chunks
-		if len(body) < 1 {
-			return false
-		}
-		var chunkEnd int
-		if chunkEnd = CheckChunked(body); chunkEnd < 1 {
+		if bodyLen < 1 {
 			return false
 		}
 
 		// check trailer headers
-		if feed.headers.Get("Trailer") == "" {
-			return true
+		if state.hasTrailer {
+			if bytes.HasSuffix(payloads[len(payloads)-1], []byte("\r\n\r\n")) {
+				return true
+			}
+		} else {
+			if bytes.HasSuffix(payloads[len(payloads)-1], []byte("0\r\n\r\n")) {
+				state.hasFullBody = true
+				return true
+			}
 		}
-		// trailer headers(whether chunked or plain) should end with empty line
-		return len(body) > chunkEnd && MIMEHeadersEndPos(body[chunkEnd:]) != -1
+
+		return false
 	}
 
 	// check for content-length header
-	if header := feed.headers.Get("Content-Length"); header != "" {
-		num, ok := atoI([]byte(header), 10)
-		// trailers are generally not allowed in non-chunks body
-		return ok && num == len(body)
-	}
-	return true
+	return state.bodyLen == bodyLen
 }
 
 // this works with positive integers
 func atoI(s []byte, base int) (num int, ok bool) {
 	var v int
+	ok = true
 	for i := 0; i < len(s); i++ {
 		if s[i] > 127 {
-			return 0, false
+			ok = false
+			break
 		}
 		v = int(hexTable[s[i]])
 		if v >= base || (v == 0 && s[i] != '0') {
-			return 0, false
+			ok = false
+			break
 		}
 		num = (num * base) + v
 	}
-	return num, true
+	return
 }
 
 var hexTable = [128]byte{

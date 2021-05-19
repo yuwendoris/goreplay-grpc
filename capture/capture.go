@@ -13,14 +13,16 @@ import (
 	"time"
 
 	"github.com/buger/goreplay/size"
+	"github.com/buger/goreplay/tcp"
+
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
 	"golang.org/x/sys/unix"
 )
 
-// Handler is a function that is used to handle packets
-type Handler func(*Packet)
+// PacketHandler is a function that is used to handle packets
+type PacketHandler func(*tcp.Packet)
 
 // PcapOptions options that can be set on a pcap capture handle,
 // these options take effect on inactive pcap handles
@@ -39,7 +41,7 @@ type Listener struct {
 	sync.Mutex
 	Transport  string       // transport layer default to tcp
 	Activate   func() error // function is used to activate the engine. it must be called before reading packets
-	Handles    map[string]gopacket.PacketDataSource
+	Handles    map[string]gopacket.ZeroCopyPacketDataSource
 	Interfaces []net.Interface
 	loopIndex  int
 	Reading    chan bool // this channel is closed when the listener has started reading packets
@@ -105,7 +107,7 @@ func NewListener(host string, port uint16, transport string, engine EngineType, 
 	if transport != "" {
 		l.Transport = transport
 	}
-	l.Handles = make(map[string]gopacket.PacketDataSource)
+	l.Handles = make(map[string]gopacket.ZeroCopyPacketDataSource)
 	l.trackResponse = trackResponse
 	l.closeDone = make(chan struct{})
 	l.quit = make(chan struct{})
@@ -138,7 +140,7 @@ func (l *Listener) SetPcapOptions(opts PcapOptions) {
 // Listen listens for packets from the handles, and call handler on every packet received
 // until the context done signal is sent or there is unrecoverable error on all handles.
 // this function must be called after activating pcap handles
-func (l *Listener) Listen(ctx context.Context, handler Handler) (err error) {
+func (l *Listener) Listen(ctx context.Context, handler PacketHandler) (err error) {
 	l.read(handler)
 	done := ctx.Done()
 	select {
@@ -152,7 +154,7 @@ func (l *Listener) Listen(ctx context.Context, handler Handler) (err error) {
 }
 
 // ListenBackground is like listen but can run concurrently and signal error through channel
-func (l *Listener) ListenBackground(ctx context.Context, handler Handler) chan error {
+func (l *Listener) ListenBackground(ctx context.Context, handler PacketHandler) chan error {
 	err := make(chan error, 1)
 	go func() {
 		defer close(err)
@@ -172,34 +174,36 @@ func (l *Listener) Filter(ifi net.Interface) (filter string) {
 	if l.port != 0 {
 		port = fmt.Sprintf("port %d", l.port)
 	}
-	dir := " dst " // direction
+	filter = fmt.Sprintf("%s dst %s", l.Transport, port)
 	if l.trackResponse {
-		dir = " "
+		filter = fmt.Sprintf("%s %s", l.Transport, port)
 	}
-	filter = fmt.Sprintf("(%s%s%s)", l.Transport, dir, port)
+
 	if listenAll(l.host) || isDevice(l.host, ifi) {
-		return
+		return "(" + filter + ")"
 	}
-	filter = fmt.Sprintf("(%s%s%s and host %s)", l.Transport, dir, port, l.host)
+	filter = fmt.Sprintf("(host %s and (%s))", l.host, filter)
+
+	log.Println("BPF filter: " + filter)
 	return
 }
 
 // PcapDumpHandler returns a handler to write packet data in PCAP
 // format, See http://wiki.wireshark.org/Development/LibpcapFileFormathandler.
 // if link layer is invalid Ethernet is assumed
-func PcapDumpHandler(file *os.File, link layers.LinkType) (handler func(packet *Packet) error, err error) {
-	if link.String() == "" {
-		link = layers.LinkTypeEthernet
-	}
-	w := NewWriterNanos(file)
-	err = w.WriteFileHeader(64<<10, link)
-	if err != nil {
-		return nil, err
-	}
-	return func(packet *Packet) error {
-		return w.WritePacket(*packet.Info, packet.Data)
-	}, nil
-}
+// func PcapDumpHandler(file *os.File, link layers.LinkType) (handler func(packet *tcp.Packet) error, err error) {
+// 	if link.String() == "" {
+// 		link = layers.LinkTypeEthernet
+// 	}
+// 	w := NewWriterNanos(file)
+// 	err = w.WriteFileHeader(64<<10, link)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return func(packet *tcp.Packet) error {
+// 		return w.WritePacket(*packet.Info, packet.Data)
+// 	}, nil
+// }
 
 // PcapHandle returns new pcap Handle from dev on success.
 // this function should be called after setting all necessary options for this listener
@@ -262,6 +266,7 @@ func (l *Listener) PcapHandle(ifi net.Interface) (handle *pcap.Handle, err error
 	} else {
 		l.BPFFilter = l.Filter(ifi)
 	}
+	fmt.Println("Interface:", ifi.Name, ". BPF Filter:", l.BPFFilter)
 	err = handle.SetBPFFilter(l.BPFFilter)
 	if err != nil {
 		handle.Close()
@@ -286,6 +291,7 @@ func (l *Listener) SocketHandle(ifi net.Interface) (handle Socket, err error) {
 	} else {
 		l.BPFFilter = l.Filter(ifi)
 	}
+	fmt.Println("BPF Filter: ", l.BPFFilter)
 	if err = handle.SetBPFFilter(l.BPFFilter); err != nil {
 		handle.Close()
 		return nil, fmt.Errorf("BPF filter error: %q%s, interface: %q", err, l.BPFFilter, ifi.Name)
@@ -294,11 +300,11 @@ func (l *Listener) SocketHandle(ifi net.Interface) (handle Socket, err error) {
 	return
 }
 
-func (l *Listener) read(handler Handler) {
+func (l *Listener) read(handler PacketHandler) {
 	l.Lock()
 	defer l.Unlock()
 	for key, handle := range l.Handles {
-		go func(key string, hndl gopacket.PacketDataSource) {
+		go func(key string, hndl gopacket.ZeroCopyPacketDataSource) {
 			defer l.closeHandles(key)
 			linkSize := 14
 			linkType := int(layers.LinkTypeEthernet)
@@ -312,14 +318,18 @@ func (l *Listener) read(handler Handler) {
 					return // can't find the linktype size
 				}
 			}
+
 			for {
 				select {
 				case <-l.quit:
 					return
 				default:
-					data, ci, err := hndl.ReadPacketData()
+					data, ci, err := hndl.ZeroCopyReadPacketData()
 					if err == nil {
-						handler(NewPacket(data, linkType, linkSize, &ci))
+						pckt, err := tcp.ParsePacket(data, linkType, linkSize, &ci)
+						if err == nil {
+							handler(pckt)
+						}
 						continue
 					}
 					if enext, ok := err.(pcap.NextError); ok && enext == pcap.NextErrorTimeoutExpired {
@@ -332,11 +342,11 @@ func (l *Listener) read(handler Handler) {
 						continue
 					}
 					if err == io.EOF || err == io.ErrClosedPipe {
+						log.Printf("stopped reading from %s interface with error %s\n", key, err)
 						return
 					}
-					if os.Getenv("GORDEBUG") != "0" {
-						log.Printf("stopped reading from %s interface with error %s\n", key, err)
-					}
+
+					log.Printf("stopped reading from %s interface with error %s\n", key, err)
 					return
 				}
 			}
@@ -477,4 +487,27 @@ func listenAll(addr string) bool {
 		return true
 	}
 	return false
+}
+
+func pcapLinkTypeLength(lType int) (int, bool) {
+	switch layers.LinkType(lType) {
+	case layers.LinkTypeEthernet:
+		return 14, true
+	case layers.LinkTypeNull, layers.LinkTypeLoop:
+		return 4, true
+	case layers.LinkTypeRaw, 12, 14:
+		return 0, true
+	case layers.LinkTypeIPv4, layers.LinkTypeIPv6:
+		// (TODO:) look out for IP encapsulation?
+		return 0, true
+	case layers.LinkTypeLinuxSLL:
+		return 16, true
+	case layers.LinkTypeFDDI:
+		return 13, true
+	case 226 /*DLT_IPNET*/ :
+		// https://www.tcpdump.org/linktypes/LINKTYPE_IPNET.html
+		return 24, true
+	default:
+		return 0, false
+	}
 }

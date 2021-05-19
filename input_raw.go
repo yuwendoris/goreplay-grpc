@@ -114,7 +114,7 @@ func (i *RAWInput) PluginRead() (*Message, error) {
 		msg.Data = msgTCP.Data()
 	}
 	var msgType byte = ResponsePayload
-	if msgTCP.IsIncoming {
+	if msgTCP.IsRequest {
 		msgType = RequestPayload
 		if i.RealIPHeader != "" {
 			msg.Data = proto.SetHeader(msg.Data, []byte(i.RealIPHeader), []byte(msgTCP.SrcAddr))
@@ -134,6 +134,7 @@ func (i *RAWInput) PluginRead() (*Message, error) {
 		stat := msgTCP.Stats
 		go i.addStats(stat)
 	}
+	msgTCP.Finalize()
 	msgTCP = nil
 	return &msg, nil
 }
@@ -149,15 +150,15 @@ func (i *RAWInput) listen(address string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	pool := tcp.NewMessagePool(i.CopyBufferSize, i.Expire, Debug, i.handler)
-	pool.MatchUUID(i.TrackResponse)
+	parser := tcp.NewMessageParser(i.CopyBufferSize, i.Expire, Debug, i.messageEmitter)
+
 	if i.Protocol == ProtocolHTTP {
-		pool.Start = http1StartHint
-		pool.End = http1EndHint
+		parser.Start = http1StartHint
+		parser.End = http1EndHint
 	}
 	var ctx context.Context
 	ctx, i.cancelListener = context.WithCancel(context.Background())
-	errCh := i.listener.ListenBackground(ctx, pool.Handler)
+	errCh := i.listener.ListenBackground(ctx, parser.PacketHandler)
 	<-i.listener.Reading
 	Debug(1, i)
 	go func() {
@@ -166,7 +167,7 @@ func (i *RAWInput) listen(address string) {
 	}()
 }
 
-func (i *RAWInput) handler(m *tcp.Message) {
+func (i *RAWInput) messageEmitter(m *tcp.Message) {
 	i.message <- m
 }
 
@@ -206,14 +207,23 @@ func (i *RAWInput) addStats(mStats tcp.Stats) {
 	i.Unlock()
 }
 
-func http1StartHint(pckt *tcp.Packet) (isIncoming, isOutgoing bool) {
-	isIncoming = proto.HasRequestTitle(pckt.Payload)
-	if isIncoming {
-		return
+func http1StartHint(pckt *tcp.Packet) (isRequest, isResponse bool) {
+	if proto.HasRequestTitle(pckt.Payload) {
+		return true, false
 	}
-	return false, proto.HasResponseTitle(pckt.Payload)
+
+	if proto.HasResponseTitle(pckt.Payload) {
+		return false, true
+	}
+
+	// No request or response detected
+	return false, false
 }
 
 func http1EndHint(m *tcp.Message) bool {
-	return proto.HasFullPayload(m.Data(), m)
+	if m.MissingChunk() {
+		return false
+	}
+
+	return proto.HasFullPayload(m, m.PacketData()...)
 }

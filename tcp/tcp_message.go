@@ -1,95 +1,96 @@
 package tcp
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
-	"github.com/buger/goreplay/capture"
 	"github.com/buger/goreplay/size"
 )
 
 // Stats every message carry its own stats object
 type Stats struct {
-	LostData   int
-	Length     int       // length of the data
-	Start      time.Time // first packet's timestamp
-	End        time.Time // last packet's timestamp
-	SrcAddr    string
-	DstAddr    string
-	IsIncoming bool
-	TimedOut   bool // timeout before getting the whole message
-	Truncated  bool // last packet truncated due to max message size
-	IPversion  byte
+	LostData  int
+	Length    int       // length of the data
+	Start     time.Time // first packet's timestamp
+	End       time.Time // last packet's timestamp
+	SrcAddr   string
+	DstAddr   string
+	IsRequest bool
+	TimedOut  bool // timeout before getting the whole message
+	Truncated bool // last packet truncated due to max message size
+	IPversion byte
 }
 
 // Message is the representation of a tcp message
 type Message struct {
 	packets  []*Packet
-	done     chan bool
-	pool     *MessagePool
-	buf      *bytes.Buffer
+	parser   *MessageParser
 	feedback interface{}
 	Stats
 }
 
-// NewMessage ...
-func NewMessage(srcAddr, dstAddr string, ipVersion uint8) (m *Message) {
-	m = new(Message)
-	m.DstAddr = dstAddr
-	m.SrcAddr = srcAddr
-	m.IPversion = ipVersion
-	m.done = make(chan bool)
-	m.buf = &bytes.Buffer{}
-	return
-}
-
 // UUID returns the UUID of a TCP request and its response.
 func (m *Message) UUID() []byte {
-	var key uint64
+	var streamID uint64
 	pckt := m.packets[0]
 
 	// check if response or request have generated the ID before.
-	if m.pool.uuids != nil {
-		lst := len(pckt.SrcIP) - 4
-		if m.IsIncoming {
-			key = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
-				uint64(_uint32(pckt.SrcIP[lst:]))
-		} else {
-			key = uint64(pckt.DstPort)<<48 | uint64(pckt.SrcPort)<<32 |
-				uint64(_uint32(pckt.DstIP[lst:]))
-		}
-		if uuidHex, ok := m.pool.uuids[key]; ok {
-			delete(m.pool.uuids, key)
-			return uuidHex
-		}
+	if m.IsRequest {
+		streamID = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
+			uint64(ip2int(pckt.SrcIP))
+	} else {
+		streamID = uint64(pckt.DstPort)<<48 | uint64(pckt.SrcPort)<<32 |
+			uint64(ip2int(pckt.DstIP))
 	}
 
-	id := make([]byte, 12, 12)
-	binary.BigEndian.PutUint32(id, pckt.Seq)
-	tStamp := m.End.UnixNano()
-	binary.BigEndian.PutUint64(id[4:], uint64(tStamp))
-	uuidHex := make([]byte, 24, 24)
-	hex.Encode(uuidHex[:], id[:])
-	if m.pool.uuids != nil {
-		if len(m.pool.uuids) >= 1000 {
-			m.pool.cleanUUIDs()
-		}
-		m.pool.uuids[key] = uuidHex
+	id := make([]byte, 12)
+	binary.BigEndian.PutUint64(id, streamID)
+
+	if m.IsRequest {
+		binary.BigEndian.PutUint32(id[8:], pckt.Ack)
+	} else {
+		binary.BigEndian.PutUint32(id[8:], pckt.Seq)
 	}
+
+	uuidHex := make([]byte, 24)
+	hex.Encode(uuidHex[:], id[:])
+
 	return uuidHex
 }
 
-func (m *Message) add(pckt *Packet) {
-	m.Length += len(pckt.Payload)
-	m.LostData += int(pckt.Lost)
-	m.packets = append(m.packets, pckt)
-	m.End = pckt.Timestamp
-	m.buf.Write(pckt.Payload)
+func (m *Message) add(packet *Packet) {
+	// fmt.Println("SEQ:", packet.Seq, " - ", len(packet.Payload))
+
+	// Skip duplicates
+	for _, p := range m.packets {
+		if p.Seq == packet.Seq {
+			return
+		}
+	}
+
+	// Packets not always captured in same Seq order, and sometimes we need to prepend
+	if len(m.packets) == 0 || packet.Seq > m.packets[len(m.packets)-1].Seq {
+		m.packets = append(m.packets, packet)
+	} else if packet.Seq < m.packets[0].Seq {
+		m.packets = append([]*Packet{packet}, m.packets...)
+	} else { // insert somewhere in the middle...
+		for i, p := range m.packets {
+			if packet.Seq < p.Seq {
+				m.packets = append(m.packets[:i], append([]*Packet{packet}, m.packets[i:]...)...)
+				break
+			}
+		}
+	}
+
+	m.Length += len(packet.Payload)
+	m.LostData += int(packet.Lost)
+
+	if packet.Timestamp.After(m.End) || m.End.IsZero() {
+		m.End = packet.Timestamp
+	}
 }
 
 // Packets returns packets of the message
@@ -97,18 +98,57 @@ func (m *Message) Packets() []*Packet {
 	return m.packets
 }
 
-// Data returns data in this message
-func (m *Message) Data() []byte {
-	return m.buf.Bytes()
+func (m *Message) MissingChunk() bool {
+	nextSeq := m.packets[0].Seq
+
+	for _, p := range m.packets {
+		if p.Seq != nextSeq {
+			return true
+		}
+
+		nextSeq += uint32(len(p.Payload))
+	}
+
+	return false
 }
 
-// SetFeedback set feedback/data that can be used later, e.g with End or Start hint
-func (m *Message) SetFeedback(feedback interface{}) {
+func (m *Message) PacketData() [][]byte {
+	var totalLen int
+	for _, p := range m.packets {
+		totalLen += len(p.Payload)
+	}
+	tmp := make([][]byte, totalLen)
+
+	for i, p := range m.packets {
+		tmp[i] = p.Payload
+	}
+
+	return tmp
+}
+
+// Data returns data in this message
+func (m *Message) Data() []byte {
+	var totalLen int
+	for _, p := range m.packets {
+		totalLen += len(p.Payload)
+	}
+	tmp := make([]byte, totalLen)
+
+	var i int
+	for _, p := range m.packets {
+		i += copy(tmp[i:], p.Payload)
+	}
+
+	return tmp
+}
+
+// SetProtocolState set feedback/data that can be used later, e.g with End or Start hint
+func (m *Message) SetProtocolState(feedback interface{}) {
 	m.feedback = feedback
 }
 
-// Feedback returns feedback associated to this message
-func (m *Message) Feedback() interface{} {
+// ProtocolState returns feedback associated to this message
+func (m *Message) ProtocolState() interface{} {
 	return m.feedback
 }
 
@@ -117,171 +157,168 @@ func (m *Message) Sort() {
 	sort.SliceStable(m.packets, func(i, j int) bool { return m.packets[i].Seq < m.packets[j].Seq })
 }
 
-// Handler message handler
-type Handler func(*Message)
+func (m *Message) Finalize() {
+	// Allow re-use memory
+	for _, p := range m.packets {
+		packetPool.Put(p)
+	}
+}
+
+// Emitter message handler
+type Emitter func(*Message)
 
 // Debugger is the debugger function. first params is the indicator of the issue's priority
 // the higher the number, the lower the priority. it can be 4 <= level <= 6.
 type Debugger func(int, ...interface{})
 
-// HintEnd hints the pool to stop the session, see MessagePool.End
+// HintEnd hints the parser to stop the session, see MessageParser.End
 // when set, it will be executed before checking FIN or RST flag
 type HintEnd func(*Message) bool
 
-// HintStart hints the pool to start the reassembling the message, see MessagePool.Start
+// HintStart hints the parser to start the reassembling the message, see MessageParser.Start
 // when set, it will be called after checking SYN flag
-type HintStart func(*Packet) (IsIncoming, IsOutgoing bool)
+type HintStart func(*Packet) (IsRequest, IsOutgoing bool)
 
-// MessagePool holds data of all tcp messages in progress(still receiving/sending packets).
+// MessageParser holds data of all tcp messages in progress(still receiving/sending packets).
 // message is identified by its source port and dst port, and last 4bytes of src IP.
-type MessagePool struct {
-	sync.Mutex
+type MessageParser struct {
 	debug         Debugger
 	maxSize       size.Size // maximum message size, default 5mb
-	pool          map[uint64]*Message
-	uuids         map[uint64][]byte
-	handler       Handler
+	m             map[uint64]*Message
+	emit          Emitter
 	messageExpire time.Duration // the maximum time to wait for the final packet, minimum is 100ms
 	End           HintEnd
 	Start         HintStart
+	ticker        *time.Ticker
+	packets       chan *Packet
+	msgs          int32         // messages in the parser
+	close         chan struct{} // to signal that we are able to close
 }
 
-// NewMessagePool returns a new instance of message pool
-func NewMessagePool(maxSize size.Size, messageExpire time.Duration, debugger Debugger, handler Handler) (pool *MessagePool) {
-	pool = new(MessagePool)
-	pool.debug = debugger
-	pool.handler = handler
-	pool.messageExpire = time.Millisecond * 100
-	if pool.messageExpire < messageExpire {
-		pool.messageExpire = messageExpire
+// NewMessageParser returns a new instance of message parser
+func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger Debugger, emitHandler Emitter) (parser *MessageParser) {
+	parser = new(MessageParser)
+	parser.debug = debugger
+	parser.emit = emitHandler
+	parser.messageExpire = time.Millisecond * 100
+	if parser.messageExpire < messageExpire {
+		parser.messageExpire = messageExpire
 	}
-	pool.maxSize = maxSize
-	if pool.maxSize < 1 {
-		pool.maxSize = 5 << 20
+	parser.maxSize = maxSize
+	if parser.maxSize < 1 {
+		parser.maxSize = 5 << 20
 	}
-	pool.pool = make(map[uint64]*Message)
-	return pool
+	parser.packets = make(chan *Packet, 1000)
+	parser.m = make(map[uint64]*Message)
+	parser.ticker = time.NewTicker(time.Millisecond * 50)
+	parser.close = make(chan struct{}, 1)
+	go parser.wait()
+	return parser
 }
 
-// Handler returns packet handler
-func (pool *MessagePool) Handler(packet *capture.Packet) {
+// Packet returns packet handler
+func (parser *MessageParser) PacketHandler(packet *Packet) {
+	parser.packets <- packet
+}
+
+func (parser *MessageParser) wait() {
+	var (
+		pckt *Packet
+		now  time.Time
+	)
+	for {
+		select {
+		case pckt = <-parser.packets:
+			parser.processPacket(pckt)
+		case now = <-parser.ticker.C:
+			parser.timer(now)
+		case <-parser.close:
+			parser.ticker.Stop()
+			// parser.Close should wait for this function to return
+			parser.close <- struct{}{}
+			return
+		}
+	}
+}
+
+func (parser *MessageParser) processPacket(pckt *Packet) {
 	var in, out bool
-	pckt, err := ParsePacket(packet)
-	if err != nil {
-		go pool.say(4, fmt.Sprintf("error decoding packet(%dBytes):%s\n", packet.Info.CaptureLength, err))
-		return
-	}
-	pool.Lock()
-	defer pool.Unlock()
-	lst := len(pckt.SrcIP) - 4
-	key := uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
-		uint64(_uint32(pckt.SrcIP[lst:]))
-	m, ok := pool.pool[key]
-	if pckt.RST {
-		if ok {
-			m.done <- true
-			<-m.done
-		}
-		key = uint64(pckt.DstPort)<<48 | uint64(pckt.SrcPort)<<32 |
-			uint64(_uint32(pckt.DstIP[lst:]))
-		m, ok = pool.pool[key]
-		if ok {
-			m.done <- true
-			<-m.done
-		}
-		go pool.say(4, fmt.Sprintf("RST flag from %s to %s at %s\n", pckt.Src(), pckt.Dst(), pckt.Timestamp))
-		return
-	}
+
+	// Trying to build unique hash, but there is small chance of collision
+	// No matter if it is request or response, all packets in the same message have same
+	m, ok := parser.m[pckt.MessageID()]
 	switch {
 	case ok:
-		pool.addPacket(m, pckt)
+		parser.addPacket(m, pckt)
 		return
-	case pckt.SYN:
-		in = !pckt.ACK
-	case pool.Start != nil:
-		if in, out = pool.Start(pckt); !(in || out) {
+	case parser.Start != nil:
+		if in, out = parser.Start(pckt); !(in || out) {
+			// Packet can be received out of order, so give it another chance
+			if pckt.Retry < 1 && len(pckt.Payload) > 0 {
+				// Requeue not known packets
+				pckt.Retry++
+
+				select {
+				case parser.packets <- pckt:
+				default:
+					packetPool.Put(pckt)
+					// fmt.Println("Skipping packet")
+				}
+			}
 			return
 		}
-	default:
-		return
 	}
-	m = NewMessage(pckt.Src(), pckt.Dst(), pckt.Version)
-	m.IsIncoming = in
-	pool.pool[key] = m
+
+	m = new(Message)
+	m.IsRequest = in
+	parser.m[pckt.MessageID()] = m
 	m.Start = pckt.Timestamp
-	m.pool = pool
-	go pool.dispatch(key, m)
-	pool.addPacket(m, pckt)
+	m.parser = parser
+	parser.addPacket(m, pckt)
 }
 
-// MatchUUID instructs the pool to use same UUID for request and responses
-// this function should be called at initial stage of the pool
-func (pool *MessagePool) MatchUUID(match bool) {
-	if match {
-		pool.uuids = make(map[uint64][]byte)
-		return
-	}
-	pool.uuids = nil
-}
-
-// run GC on UUID map
-func (pool *MessagePool) cleanUUIDs() {
-	var tStamp int64
-	now := time.Now().UnixNano()
-	for k, v := range pool.uuids {
-		// there is a timestamp wrapped in every ID
-		tStamp = int64(binary.BigEndian.Uint64(v[4:]))
-		if time.Duration(now-tStamp) > pool.messageExpire {
-			delete(pool.uuids, k)
-		}
-	}
-}
-
-func (pool *MessagePool) dispatch(key uint64, m *Message) {
-	select {
-	case <-m.done:
-		defer func() { m.done <- true }() // signal that message was dispatched
-	case <-time.After(pool.messageExpire):
-		pool.Lock()
-		defer pool.Unlock()
-		// avoid dispathing message twice
-		if _, ok := pool.pool[key]; !ok {
-			return
-		}
-		m.TimedOut = true
-	}
-	delete(pool.pool, key)
-	pool.handler(m)
-}
-
-func (pool *MessagePool) addPacket(m *Message, pckt *Packet) {
-	trunc := m.Length + len(pckt.Payload) - int(pool.maxSize)
+func (parser *MessageParser) addPacket(m *Message, pckt *Packet) {
+	trunc := m.Length + len(pckt.Payload) - int(parser.maxSize)
 	if trunc > 0 {
 		m.Truncated = true
-		pckt.Payload = pckt.Payload[:int(pool.maxSize)-m.Length]
+		pckt.Payload = pckt.Payload[:int(parser.maxSize)-m.Length]
 	}
 	m.add(pckt)
 	switch {
-
 	// if one of this cases matches, we dispatch the message
 	case trunc >= 0:
-	case pckt.FIN:
-	case pool.End != nil && pool.End(m):
+	case parser.End != nil && parser.End(m):
 	default:
 		// continue to receive packets
 		return
 	}
-	m.done <- true
-	<-m.done
+
+	parser.Emit(m)
 }
 
-// this function should not block other pool operations
-func (pool *MessagePool) say(level int, args ...interface{}) {
-	if pool.debug != nil {
-		pool.debug(level, args...)
+func (parser *MessageParser) Emit(m *Message) {
+	delete(parser.m, m.packets[0].MessageID())
+	parser.emit(m)
+}
+
+func (parser *MessageParser) timer(now time.Time) {
+	for _, m := range parser.m {
+		if now.Sub(m.End) > parser.messageExpire {
+			m.TimedOut = true
+			parser.Emit(m)
+		}
 	}
 }
 
-func _uint32(b []byte) uint32 {
-	return binary.BigEndian.Uint32(b)
+// this function should not block other parser operations
+func (parser *MessageParser) Debug(level int, args ...interface{}) {
+	if parser.debug != nil {
+		parser.debug(level, args...)
+	}
+}
+
+func (parser *MessageParser) Close() error {
+	parser.close <- struct{}{}
+	<-parser.close // wait for timer to be closed!
+	return nil
 }
