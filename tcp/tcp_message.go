@@ -3,7 +3,6 @@ package tcp
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"fmt"
 	"sort"
 	"time"
 
