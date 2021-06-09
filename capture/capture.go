@@ -270,13 +270,7 @@ func (l *Listener) PcapHandle(ifi net.Interface) (handle *pcap.Handle, err error
 	if err != nil {
 		return nil, fmt.Errorf("PCAP Activate device error: %q, interface: %q", err, ifi.Name)
 	}
-	if l.BPFFilter != "" {
-		if l.BPFFilter[0] != '(' || l.BPFFilter[len(l.BPFFilter)-1] != ')' {
-			l.BPFFilter = "(" + l.BPFFilter + ")"
-		}
-	} else {
-		l.BPFFilter = l.Filter(ifi)
-	}
+	l.BPFFilter = l.Filter(ifi)
 	fmt.Println("Interface:", ifi.Name, ". BPF Filter:", l.BPFFilter)
 	err = handle.SetBPFFilter(l.BPFFilter)
 	if err != nil {
@@ -295,13 +289,7 @@ func (l *Listener) SocketHandle(ifi net.Interface) (handle Socket, err error) {
 	if err = handle.SetPromiscuous(l.Promiscuous || l.Monitor); err != nil {
 		return nil, fmt.Errorf("promiscuous mode error: %q, interface: %q", err, ifi.Name)
 	}
-	if l.BPFFilter != "" {
-		if l.BPFFilter[0] != '(' || l.BPFFilter[len(l.BPFFilter)-1] != ')' {
-			l.BPFFilter = "(" + l.BPFFilter + ")"
-		}
-	} else {
-		l.BPFFilter = l.Filter(ifi)
-	}
+	l.BPFFilter = l.Filter(ifi)
 	fmt.Println("BPF Filter: ", l.BPFFilter)
 	if err = handle.SetBPFFilter(l.BPFFilter); err != nil {
 		handle.Close()
@@ -427,16 +415,12 @@ func (l *Listener) activatePcapFile() (err error) {
 	if handle, e = pcap.OpenOffline(l.host); e != nil {
 		return fmt.Errorf("open pcap file error: %q", e)
 	}
-	if l.BPFFilter != "" {
-		if l.BPFFilter[0] != '(' || l.BPFFilter[len(l.BPFFilter)-1] != ')' {
-			l.BPFFilter = "(" + l.BPFFilter + ")"
-		}
-	} else {
-		addr := l.host
-		l.host = ""
-		l.BPFFilter = l.Filter(net.Interface{})
-		l.host = addr
-	}
+
+	tmp := l.host
+	l.host = ""
+	l.BPFFilter = l.Filter(net.Interface{})
+	l.host = tmp
+
 	if e = handle.SetBPFFilter(l.BPFFilter); e != nil {
 		handle.Close()
 		return fmt.Errorf("BPF filter error: %q, filter: %s", e, l.BPFFilter)
