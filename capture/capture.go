@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -170,21 +171,31 @@ func (l *Listener) ListenBackground(ctx context.Context, handler PacketHandler) 
 func (l *Listener) Filter(ifi net.Interface) (filter string) {
 	// https://www.tcpdump.org/manpages/pcap-filter.7.html
 
-	port := fmt.Sprintf("portrange 0-%d", 1<<16-1)
-	if l.port != 0 {
-		port = fmt.Sprintf("port %d", l.port)
-	}
-	filter = fmt.Sprintf("%s dst %s", l.Transport, port)
-	if l.trackResponse {
-		filter = fmt.Sprintf("%s %s", l.Transport, port)
-	}
-
+	hosts := []string{l.host}
 	if listenAll(l.host) || isDevice(l.host, ifi) {
-		return "(" + filter + ")"
+		hosts = interfaceAddresses(ifi)
 	}
-	filter = fmt.Sprintf("(host %s and (%s))", l.host, filter)
 
-	log.Println("BPF filter: " + filter)
+	filter = portsFilter(l.Transport, "dst", l.port)
+
+	if len(hosts) != 0 {
+		filter = fmt.Sprintf("((%s) and (%s))", filter, hostsFilter("dst", hosts))
+	} else {
+		filter = fmt.Sprintf("(%s)", filter)
+	}
+
+	if l.trackResponse {
+		responseFilter := portsFilter(l.Transport, "src", l.port)
+
+		if len(hosts) != 0 {
+			responseFilter = fmt.Sprintf("((%s) and (%s))", responseFilter, hostsFilter("src", hosts))
+		} else {
+			responseFilter = fmt.Sprintf("(%s)", responseFilter)
+		}
+
+		filter = fmt.Sprintf("%s or %s", filter, responseFilter)
+	}
+
 	return
 }
 
@@ -481,12 +492,41 @@ func isDevice(addr string, ifi net.Interface) bool {
 	return addr == ifi.Name || addr == fmt.Sprintf("%d", ifi.Index) || (addr != "" && addr == ifi.HardwareAddr.String())
 }
 
+func interfaceAddresses(ifi net.Interface) []string {
+	var hosts []string
+	if addrs, err := ifi.Addrs(); err == nil {
+		for _, addr := range addrs {
+			if ip := addr.(*net.IPNet).IP.To16(); ip != nil {
+				hosts = append(hosts, ip.String())
+			}
+		}
+	}
+	return hosts
+}
+
 func listenAll(addr string) bool {
 	switch addr {
 	case "", "0.0.0.0", "[::]", "::":
 		return true
 	}
 	return false
+}
+
+func portsFilter(transport string, direction string, port uint16) string {
+	if port == 0 {
+		return fmt.Sprintf("%s %s portrange 0-%d", transport, direction, 1<<16-1)
+	}
+
+	return fmt.Sprintf("%s %s port %d", transport, direction, port)
+}
+
+func hostsFilter(direction string, hosts []string) string {
+	var hostsFilters []string
+	for _, host := range hosts {
+		hostsFilters = append(hostsFilters, fmt.Sprintf("%s host %s", direction, host))
+	}
+
+	return strings.Join(hostsFilters, " or ")
 }
 
 func pcapLinkTypeLength(lType int) (int, bool) {
