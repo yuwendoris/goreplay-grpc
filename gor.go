@@ -22,8 +22,13 @@ var (
 	memprofile = flag.String("memprofile", "", "write memory profile to this file")
 )
 
-func loggingMiddleware(next http.Handler) http.Handler {
+func loggingMiddleware(addr string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/loop" {
+			_, err := http.Get("http://" + addr)
+			log.Println(err)
+		}
+
 		rb, _ := httputil.DumpRequest(r, false)
 		log.Println(string(rb))
 		next.ServeHTTP(w, r)
@@ -45,7 +50,7 @@ func main() {
 
 		Debug(0, "Started example file server for current directory on address ", args[1])
 
-		log.Fatal(http.ListenAndServe(args[1], loggingMiddleware(http.FileServer(http.Dir(dir)))))
+		log.Fatal(http.ListenAndServe(args[1], loggingMiddleware(args[1], http.FileServer(http.Dir(dir)))))
 	} else {
 		flag.Parse()
 		checkSettings()
