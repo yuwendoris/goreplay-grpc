@@ -2,6 +2,7 @@
 *.gor
 *.rpm
 *.dep
+*.deb
 *.pkg
 *.exe
 
