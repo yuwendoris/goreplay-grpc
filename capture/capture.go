@@ -106,7 +106,7 @@ func NewListener(host string, ports []uint16, transport string, engine EngineTyp
 	if l.host == "localhost" {
 		l.host = "127.0.0.1"
 	}
-	l.port = port
+	l.ports = ports
 
 	l.Transport = "tcp"
 	if transport != "" {
