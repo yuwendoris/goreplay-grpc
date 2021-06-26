@@ -42,7 +42,7 @@ type Listener struct {
 	sync.Mutex
 	Transport  string       // transport layer default to tcp
 	Activate   func() error // function is used to activate the engine. it must be called before reading packets
-	Handles    map[string]gopacket.ZeroCopyPacketDataSource
+	Handles    map[string]gopacket.PacketDataSource
 	Interfaces []pcap.Interface
 	loopIndex  int
 	Reading    chan bool // this channel is closed when the listener has started reading packets
@@ -112,7 +112,7 @@ func NewListener(host string, ports []uint16, transport string, engine EngineTyp
 	if transport != "" {
 		l.Transport = transport
 	}
-	l.Handles = make(map[string]gopacket.ZeroCopyPacketDataSource)
+	l.Handles = make(map[string]gopacket.PacketDataSource)
 	l.trackResponse = trackResponse
 	l.closeDone = make(chan struct{})
 	l.quit = make(chan struct{})
@@ -301,7 +301,7 @@ func (l *Listener) read(handler PacketHandler) {
 	l.Lock()
 	defer l.Unlock()
 	for key, handle := range l.Handles {
-		go func(key string, hndl gopacket.ZeroCopyPacketDataSource) {
+		go func(key string, hndl gopacket.PacketDataSource) {
 			defer l.closeHandles(key)
 			linkSize := 14
 			linkType := int(layers.LinkTypeEthernet)
@@ -321,7 +321,7 @@ func (l *Listener) read(handler PacketHandler) {
 				case <-l.quit:
 					return
 				default:
-					data, ci, err := hndl.ZeroCopyReadPacketData()
+					data, ci, err := hndl.ReadPacketData()
 					if err == nil {
 						pckt, err := tcp.ParsePacket(data, linkType, linkSize, &ci)
 						if err == nil {
