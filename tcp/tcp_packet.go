@@ -39,6 +39,7 @@ type Packet struct {
 	ACK, SYN, FIN, RST bool
 	Lost               uint32
 	Retry              int
+	CaptureLength      int
 	Timestamp          time.Time
 	Payload            []byte
 }
@@ -139,6 +140,7 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pc
 
 	transLayer = ndata[:dOf]
 
+	pckt.CaptureLength = cp.CaptureLength
 	pckt.SrcPort = binary.BigEndian.Uint16(transLayer[0:2])
 	pckt.DstPort = binary.BigEndian.Uint16(transLayer[2:4])
 	pckt.Seq = binary.BigEndian.Uint32(transLayer[4:8])

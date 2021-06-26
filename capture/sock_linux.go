@@ -1,3 +1,5 @@
+// +build linux
+
 package capture
 
 import (
@@ -58,7 +60,7 @@ func NewSocket(pifi pcap.Interface) (*SockRaw, error) {
 	}
 
 	if !found {
-		return nil, fmt.Errorf("Can't find matching interface")
+		return nil, fmt.Errorf("can't find matching interface")
 	}
 
 	// sock create

@@ -204,23 +204,6 @@ func (l *Listener) Filter(ifi pcap.Interface) (filter string) {
 	return
 }
 
-// PcapDumpHandler returns a handler to write packet data in PCAP
-// format, See http://wiki.wireshark.org/Development/LibpcapFileFormathandler.
-// if link layer is invalid Ethernet is assumed
-// func PcapDumpHandler(file *os.File, link layers.LinkType) (handler func(packet *tcp.Packet) error, err error) {
-// 	if link.String() == "" {
-// 		link = layers.LinkTypeEthernet
-// 	}
-// 	w := NewWriterNanos(file)
-// 	err = w.WriteFileHeader(64<<10, link)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	return func(packet *tcp.Packet) error {
-// 		return w.WritePacket(*packet.Info, packet.Data)
-// 	}, nil
-// }
-
 // PcapHandle returns new pcap Handle from dev on success.
 // this function should be called after setting all necessary options for this listener
 func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err error) {
