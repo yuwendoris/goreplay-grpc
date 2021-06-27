@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/google/gopacket"
@@ -18,10 +17,38 @@ func copySlice(b, a []byte) []byte {
 	return b[:len(a)]
 }
 
-var packetPool = &sync.Pool{
-	New: func() interface{} {
-		return new(Packet)
-	},
+var packetPool = NewPool(10000)
+
+// Pool holds Clients.
+type Pool struct {
+	pool chan *Packet
+}
+
+// NewPool creates a new pool of Clients.
+func NewPool(max int) *Pool {
+	return &Pool{
+		pool: make(chan *Packet, max),
+	}
+}
+
+// Borrow a Client from the pool.
+func (p *Pool) Get() *Packet {
+	var c *Packet
+	select {
+	case c = <-p.pool:
+	default:
+		c = new(Packet)
+	}
+	return c
+}
+
+// Return returns a Client to the pool.
+func (p *Pool) Put(c *Packet) {
+	select {
+	case p.pool <- c:
+	default:
+		// let it go, let it go...
+	}
 }
 
 /*
@@ -46,7 +73,7 @@ type Packet struct {
 
 // ParsePacket parse raw packets
 func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pckt *Packet, err error) {
-	pckt = packetPool.Get().(*Packet)
+	pckt = packetPool.Get()
 	if err := pckt.parse(data, lType, lTypeLen, cp); err != nil {
 		packetPool.Put(pckt)
 		return nil, err

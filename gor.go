@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	_ "runtime/debug"
+	"runtime/debug"
 	"runtime/pprof"
 	"syscall"
 	"time"
@@ -38,6 +38,10 @@ func loggingMiddleware(addr string, next http.Handler) http.Handler {
 func main() {
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU() * 2)
+	}
+
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(500)
 	}
 
 	args := os.Args[1:]

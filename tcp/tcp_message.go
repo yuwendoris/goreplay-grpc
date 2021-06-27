@@ -9,7 +9,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/buger/goreplay/ring"
 	"github.com/buger/goreplay/size"
 )
 
@@ -189,8 +188,8 @@ type MessageParser struct {
 	End           HintEnd
 	Start         HintStart
 	ticker        *time.Ticker
-	messages      *ring.RingBuffer
-	packets       *ring.RingBuffer
+	messages      chan *Message
+	packets       chan *Packet
 	close         chan struct{} // to signal that we are able to close
 }
 
@@ -207,8 +206,8 @@ func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger D
 		parser.maxSize = 5 << 20
 	}
 
-	parser.packets = ring.NewRingBuffer(10000)
-	parser.messages = ring.NewRingBuffer(10000)
+	parser.packets = make(chan *Packet, 10000)
+	parser.messages = make(chan *Message, 10000)
 
 	parser.m = make(map[uint64]*Message)
 	parser.ticker = time.NewTicker(time.Millisecond * 50)
@@ -222,7 +221,7 @@ var packetLen int
 // Packet returns packet handler
 func (parser *MessageParser) PacketHandler(packet *Packet) {
 	packetLen++
-	parser.packets.Offer(packet)
+	parser.packets <- packet
 }
 
 var processedPackets int
@@ -232,15 +231,9 @@ func (parser *MessageParser) wait() {
 		now time.Time
 	)
 	for {
-		pckt, err := parser.packets.Poll(-1)
-		if err == nil {
-			processedPackets++
-			parser.processPacket(pckt.(*Packet))
-		} else {
-			time.Sleep(50 * time.Millisecond)
-		}
-
 		select {
+		case pckt := <-parser.packets:
+			parser.processPacket(pckt)
 		case now = <-parser.ticker.C:
 			parser.timer(now)
 		case <-parser.close:
@@ -248,7 +241,7 @@ func (parser *MessageParser) wait() {
 			// parser.Close should wait for this function to return
 			parser.close <- struct{}{}
 			return
-		default:
+			// default:
 		}
 	}
 }
@@ -270,9 +263,9 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 				// Requeue not known packets
 				pckt.Retry++
 
-				if ok, _ := parser.packets.Offer(pckt); !ok {
-					// Drop packet if it does not fit to ring buffer
-					pckt.Payload = pckt.Payload[:]
+				select {
+				case parser.packets <- pckt:
+				default:
 					packetPool.Put(pckt)
 				}
 			}
@@ -308,19 +301,14 @@ func (parser *MessageParser) addPacket(m *Message, pckt *Packet) {
 }
 
 func (parser *MessageParser) Read() *Message {
-	for {
-		if m, err := parser.messages.Poll(-1); err != nil {
-			time.Sleep(50 * time.Millisecond)
-		} else {
-			return m.(*Message)
-		}
-	}
+	m := <-parser.messages
+	return m
 }
 
 func (parser *MessageParser) Emit(m *Message) {
 	delete(parser.m, m.packets[0].MessageID())
 
-	parser.messages.Offer(m)
+	parser.messages <- m
 }
 
 func GetUnexportedField(field reflect.Value) interface{} {
