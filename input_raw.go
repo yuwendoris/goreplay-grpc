@@ -71,7 +71,7 @@ type RAWInput struct {
 	RAWInputConfig
 	messageStats   []tcp.Stats
 	listener       *capture.Listener
-	message        chan *tcp.Message
+	messageParser  *tcp.MessageParser
 	cancelListener context.CancelFunc
 	closed         bool
 }
@@ -80,7 +80,6 @@ type RAWInput struct {
 func NewRAWInput(address string, config RAWInputConfig) (i *RAWInput) {
 	i = new(RAWInput)
 	i.RAWInputConfig = config
-	i.message = make(chan *tcp.Message, 10000)
 	i.quit = make(chan bool)
 
 	host, _ports, err := net.SplitHostPort(address)
@@ -117,9 +116,11 @@ func (i *RAWInput) PluginRead() (*Message, error) {
 	select {
 	case <-i.quit:
 		return nil, ErrorStopped
-	case msgTCP = <-i.message:
+	default:
+		msgTCP = i.messageParser.Read()
 		msg.Data = msgTCP.Data()
 	}
+
 	var msgType byte = ResponsePayload
 	if msgTCP.IsRequest {
 		msgType = RequestPayload
@@ -157,25 +158,21 @@ func (i *RAWInput) listen(address string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	parser := tcp.NewMessageParser(i.CopyBufferSize, i.Expire, Debug, i.messageEmitter)
+	i.messageParser = tcp.NewMessageParser(i.CopyBufferSize, i.Expire, Debug)
 
 	if i.Protocol == ProtocolHTTP {
-		parser.Start = http1StartHint
-		parser.End = http1EndHint
+		i.messageParser.Start = http1StartHint
+		i.messageParser.End = http1EndHint
 	}
 	var ctx context.Context
 	ctx, i.cancelListener = context.WithCancel(context.Background())
-	errCh := i.listener.ListenBackground(ctx, parser.PacketHandler)
+	errCh := i.listener.ListenBackground(ctx, i.messageParser.PacketHandler)
 	<-i.listener.Reading
 	Debug(1, i)
 	go func() {
 		<-errCh // the listener closed voluntarily
 		i.Close()
 	}()
-}
-
-func (i *RAWInput) messageEmitter(m *tcp.Message) {
-	i.message <- m
 }
 
 func (i *RAWInput) String() string {

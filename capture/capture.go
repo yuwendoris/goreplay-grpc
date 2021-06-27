@@ -209,6 +209,8 @@ func (l *Listener) Filter(ifi pcap.Interface) (filter string) {
 		filter = fmt.Sprintf("%s or %s", filter, responseFilter)
 	}
 
+	// filter = fmt.Sprintf("((((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)) and (%s)", filter)
+
 	return
 }
 
@@ -221,6 +223,9 @@ func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err erro
 		return nil, fmt.Errorf("inactive handle error: %q, interface: %q", err, ifi.Name)
 	}
 	defer inactive.CleanUp()
+
+	inactive.SetTimeout(pcap.BlockForever)
+
 	if l.TimestampType != "" {
 		var ts pcap.TimestampSource
 		ts, err = pcap.TimestampSourceFromString(l.TimestampType)
@@ -364,11 +369,10 @@ func (l *Listener) closeHandles(key string) {
 	l.Lock()
 	defer l.Unlock()
 	if handle, ok := l.Handles[key]; ok {
-		if _, ok = handle.(Socket); ok {
-			handle.(Socket).Close()
-		} else {
-			handle.(*pcap.Handle).Close()
+		if c, ok := handle.(io.Closer); ok {
+			c.Close()
 		}
+
 		delete(l.Handles, key)
 		if len(l.Handles) == 0 {
 			close(l.closeDone)

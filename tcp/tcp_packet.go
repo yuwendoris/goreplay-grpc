@@ -123,7 +123,7 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pc
 	}
 
 	if len(ndata[dOf:]) == 0 {
-		return nil, fmt.Errorf("Packet without Data")
+		return nil, EmptyPacket("")
 	}
 
 	if (netLayer[0] >> 4) == 4 {
@@ -150,7 +150,7 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pc
 	pckt.RST = transLayer[13]&0x04 != 0
 	pckt.ACK = transLayer[13]&0x10 != 0
 	pckt.Lost = uint32(cp.Length - cp.CaptureLength)
-	pckt.Payload = copySlice(pckt.Payload, ndata[dOf:])
+	pckt.Payload = ndata[dOf:]
 	return
 }
 
@@ -172,6 +172,12 @@ func (pckt *Packet) Src() string {
 // Dst returns destination socket
 func (pckt *Packet) Dst() string {
 	return fmt.Sprintf("%s:%d", pckt.DstIP, pckt.DstPort)
+}
+
+type EmptyPacket string
+
+func (err EmptyPacket) Error() string {
+	return "Empty packet"
 }
 
 // ErrHdrLength returned on short header length

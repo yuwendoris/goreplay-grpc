@@ -5,8 +5,9 @@
 *.deb
 *.pkg
 *.exe
-
+*.pprof
 *.out
+hey
 
 *.bin
 

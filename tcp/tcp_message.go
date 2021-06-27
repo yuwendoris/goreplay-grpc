@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/buger/goreplay/ring"
 	"github.com/buger/goreplay/size"
 )
 
@@ -178,24 +179,23 @@ type HintStart func(*Packet) (IsRequest, IsOutgoing bool)
 // MessageParser holds data of all tcp messages in progress(still receiving/sending packets).
 // message is identified by its source port and dst port, and last 4bytes of src IP.
 type MessageParser struct {
-	debug         Debugger
-	maxSize       size.Size // maximum message size, default 5mb
-	m             map[uint64]*Message
-	emit          Emitter
+	debug   Debugger
+	maxSize size.Size // maximum message size, default 5mb
+	m       map[uint64]*Message
+
 	messageExpire time.Duration // the maximum time to wait for the final packet, minimum is 100ms
 	End           HintEnd
 	Start         HintStart
 	ticker        *time.Ticker
-	packets       chan *Packet
-	msgs          int32         // messages in the parser
+	messages      *ring.RingBuffer
+	packets       *ring.RingBuffer
 	close         chan struct{} // to signal that we are able to close
 }
 
 // NewMessageParser returns a new instance of message parser
-func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger Debugger, emitHandler Emitter) (parser *MessageParser) {
+func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger Debugger) (parser *MessageParser) {
 	parser = new(MessageParser)
 	parser.debug = debugger
-	parser.emit = emitHandler
 	parser.messageExpire = time.Millisecond * 100
 	if parser.messageExpire < messageExpire {
 		parser.messageExpire = messageExpire
@@ -204,7 +204,10 @@ func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger D
 	if parser.maxSize < 1 {
 		parser.maxSize = 5 << 20
 	}
-	parser.packets = make(chan *Packet, 1000)
+
+	parser.packets = ring.NewRingBuffer(10000)
+	parser.messages = ring.NewRingBuffer(10000)
+
 	parser.m = make(map[uint64]*Message)
 	parser.ticker = time.NewTicker(time.Millisecond * 50)
 	parser.close = make(chan struct{}, 1)
@@ -214,18 +217,22 @@ func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger D
 
 // Packet returns packet handler
 func (parser *MessageParser) PacketHandler(packet *Packet) {
-	parser.packets <- packet
+	parser.packets.Offer(packet)
 }
 
 func (parser *MessageParser) wait() {
 	var (
-		pckt *Packet
-		now  time.Time
+		now time.Time
 	)
 	for {
+		pckt, err := parser.packets.Poll(-1)
+		if err == nil {
+			parser.processPacket(pckt.(*Packet))
+		} else {
+			time.Sleep(50 * time.Millisecond)
+		}
+
 		select {
-		case pckt = <-parser.packets:
-			parser.processPacket(pckt)
 		case now = <-parser.ticker.C:
 			parser.timer(now)
 		case <-parser.close:
@@ -254,11 +261,9 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 				// Requeue not known packets
 				pckt.Retry++
 
-				select {
-				case parser.packets <- pckt:
-				default:
+				if ok, _ := parser.packets.Offer(pckt); !ok {
+					// Drop packet if it does not fit to ring buffer
 					packetPool.Put(pckt)
-					// fmt.Println("Skipping packet")
 				}
 			}
 			return
@@ -292,9 +297,20 @@ func (parser *MessageParser) addPacket(m *Message, pckt *Packet) {
 	parser.Emit(m)
 }
 
+func (parser *MessageParser) Read() *Message {
+	for {
+		if m, err := parser.messages.Poll(-1); err != nil {
+			time.Sleep(50 * time.Millisecond)
+		} else {
+			return m.(*Message)
+		}
+	}
+}
+
 func (parser *MessageParser) Emit(m *Message) {
 	delete(parser.m, m.packets[0].MessageID())
-	parser.emit(m)
+
+	parser.messages.Offer(m)
 }
 
 func (parser *MessageParser) timer(now time.Time) {
