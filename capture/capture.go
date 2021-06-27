@@ -42,7 +42,7 @@ type Listener struct {
 	sync.Mutex
 	Transport  string       // transport layer default to tcp
 	Activate   func() error // function is used to activate the engine. it must be called before reading packets
-	Handles    map[string]gopacket.PacketDataSource
+	Handles    map[string]gopacket.ZeroCopyPacketDataSource
 	Interfaces []pcap.Interface
 	loopIndex  int
 	Reading    chan bool // this channel is closed when the listener has started reading packets
@@ -117,7 +117,7 @@ func NewListener(host string, ports []uint16, transport string, engine EngineTyp
 	if transport != "" {
 		l.Transport = transport
 	}
-	l.Handles = make(map[string]gopacket.PacketDataSource)
+	l.Handles = make(map[string]gopacket.ZeroCopyPacketDataSource)
 	l.trackResponse = trackResponse
 	l.closeDone = make(chan struct{})
 	l.quit = make(chan struct{})
@@ -224,8 +224,6 @@ func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err erro
 	}
 	defer inactive.CleanUp()
 
-	inactive.SetTimeout(pcap.BlockForever)
-
 	if l.TimestampType != "" {
 		var ts pcap.TimestampSource
 		ts, err = pcap.TimestampSourceFromString(l.TimestampType)
@@ -271,7 +269,7 @@ func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err erro
 		}
 	}
 	if l.BufferTimeout == 0 {
-		l.BufferTimeout = pcap.BlockForever
+		l.BufferTimeout = 2000 * time.Millisecond
 	}
 	err = inactive.SetTimeout(l.BufferTimeout)
 	if err != nil {
@@ -314,7 +312,7 @@ func (l *Listener) read(handler PacketHandler) {
 	l.Lock()
 	defer l.Unlock()
 	for key, handle := range l.Handles {
-		go func(key string, hndl gopacket.PacketDataSource) {
+		go func(key string, hndl gopacket.ZeroCopyPacketDataSource) {
 			defer l.closeHandles(key)
 			linkSize := 14
 			linkType := int(layers.LinkTypeEthernet)
@@ -334,7 +332,7 @@ func (l *Listener) read(handler PacketHandler) {
 				case <-l.quit:
 					return
 				default:
-					data, ci, err := hndl.ReadPacketData()
+					data, ci, err := hndl.ZeroCopyReadPacketData()
 					if err == nil {
 						pckt, err := tcp.ParsePacket(data, linkType, linkSize, &ci)
 						if err == nil {

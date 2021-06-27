@@ -18,7 +18,7 @@ func copySlice(b, a []byte) []byte {
 	return b[:len(a)]
 }
 
-var packetPool = sync.Pool{
+var packetPool = &sync.Pool{
 	New: func() interface{} {
 		return new(Packet)
 	},
@@ -47,6 +47,15 @@ type Packet struct {
 // ParsePacket parse raw packets
 func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pckt *Packet, err error) {
 	pckt = packetPool.Get().(*Packet)
+	if err := pckt.parse(data, lType, lTypeLen, cp); err != nil {
+		packetPool.Put(pckt)
+		return nil, err
+	}
+
+	return pckt, nil
+}
+
+func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) error {
 	pckt.Retry = 0
 	pckt.messageID = 0
 
@@ -54,10 +63,10 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pc
 	pckt.Timestamp = cp.Timestamp
 
 	if len(data) < lTypeLen {
-		return nil, ErrHdrLength("Link")
+		return ErrHdrLength("Link")
 	}
 	if len(data) <= lTypeLen {
-		return nil, ErrHdrMissing("IPv4 or IPv6")
+		return ErrHdrMissing("IPv4 or IPv6")
 	}
 
 	ldata := data[lTypeLen:]
@@ -67,63 +76,63 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pc
 	if ldata[0]>>4 == 4 {
 		// IPv4 header
 		if len(ldata) < 20 {
-			return nil, ErrHdrLength("IPv4")
+			return ErrHdrLength("IPv4")
 		}
 		proto = ldata[9]
 		ihl := int(ldata[0]&0x0F) * 4
 		if ihl < 20 {
-			return nil, ErrHdrInvalid("IPv4's IHL")
+			return ErrHdrInvalid("IPv4's IHL")
 		}
 		if len(ldata) < ihl {
-			return nil, ErrHdrLength("IPv4 opts")
+			return ErrHdrLength("IPv4 opts")
 		}
 		netLayer = ldata[:ihl]
 	} else if ldata[0]>>4 == 6 {
 		if len(ldata) < 40 {
-			return nil, ErrHdrLength("IPv6")
+			return ErrHdrLength("IPv6")
 		}
 		proto = ldata[6]
 		totalLen := 40
 		for ipv6ExtensionHdr(proto) {
 			hdr := len(ldata) - totalLen
 			if hdr < 8 {
-				return nil, ErrHdrExpected("IPv6 opts")
+				return ErrHdrExpected("IPv6 opts")
 			}
 			extLen := 8
 			if proto != 44 {
 				extLen = int(ldata[totalLen+1]+1) * 8
 			}
 			if hdr < extLen {
-				return nil, ErrHdrLength("IPv6 opts")
+				return ErrHdrLength("IPv6 opts")
 			}
 			proto = ldata[totalLen]
 			totalLen += extLen
 		}
 		netLayer = ldata[:totalLen]
 	} else {
-		return nil, ErrHdrExpected("IPv4 or IPv6")
+		return ErrHdrExpected("IPv4 or IPv6")
 	}
 	if proto != 6 {
-		return nil, ErrHdrExpected("TCP")
+		return ErrHdrExpected("TCP")
 	}
 	if len(data) <= len(netLayer) {
-		return nil, ErrHdrMissing("TCP")
+		return ErrHdrMissing("TCP")
 	}
 	ndata := ldata[len(netLayer):]
 	// TCP header
 	if len(ndata) < 20 {
-		return nil, ErrHdrLength("TCP")
+		return ErrHdrLength("TCP")
 	}
 	dOf := int(ndata[12]>>4) * 4
 	if dOf < 20 {
-		return nil, ErrHdrInvalid("TCP's ndata offset")
+		return ErrHdrInvalid("TCP's ndata offset")
 	}
 	if len(ndata) < dOf {
-		return nil, ErrHdrLength("TCP opts")
+		return ErrHdrLength("TCP opts")
 	}
 
 	if len(ndata[dOf:]) == 0 {
-		return nil, EmptyPacket("")
+		return EmptyPacket("")
 	}
 
 	if (netLayer[0] >> 4) == 4 {
@@ -150,8 +159,9 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo) (pc
 	pckt.RST = transLayer[13]&0x04 != 0
 	pckt.ACK = transLayer[13]&0x10 != 0
 	pckt.Lost = uint32(cp.Length - cp.CaptureLength)
-	pckt.Payload = ndata[dOf:]
-	return
+	pckt.Payload = copySlice(pckt.Payload, ndata[dOf:])
+
+	return nil
 }
 
 func (pckt *Packet) MessageID() uint64 {

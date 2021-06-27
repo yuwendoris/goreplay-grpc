@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	_ "fmt"
+	"reflect"
 	"sort"
 	"time"
+	"unsafe"
 
 	"github.com/buger/goreplay/ring"
 	"github.com/buger/goreplay/size"
@@ -215,10 +217,15 @@ func NewMessageParser(maxSize size.Size, messageExpire time.Duration, debugger D
 	return parser
 }
 
+var packetLen int
+
 // Packet returns packet handler
 func (parser *MessageParser) PacketHandler(packet *Packet) {
+	packetLen++
 	parser.packets.Offer(packet)
 }
+
+var processedPackets int
 
 func (parser *MessageParser) wait() {
 	var (
@@ -227,6 +234,7 @@ func (parser *MessageParser) wait() {
 	for {
 		pckt, err := parser.packets.Poll(-1)
 		if err == nil {
+			processedPackets++
 			parser.processPacket(pckt.(*Packet))
 		} else {
 			time.Sleep(50 * time.Millisecond)
@@ -240,6 +248,7 @@ func (parser *MessageParser) wait() {
 			// parser.Close should wait for this function to return
 			parser.close <- struct{}{}
 			return
+		default:
 		}
 	}
 }
@@ -263,6 +272,7 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 
 				if ok, _ := parser.packets.Offer(pckt); !ok {
 					// Drop packet if it does not fit to ring buffer
+					pckt.Payload = pckt.Payload[:]
 					packetPool.Put(pckt)
 				}
 			}
@@ -313,7 +323,13 @@ func (parser *MessageParser) Emit(m *Message) {
 	parser.messages.Offer(m)
 }
 
+func GetUnexportedField(field reflect.Value) interface{} {
+	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
+}
+
 func (parser *MessageParser) timer(now time.Time) {
+	// fmt.Println(parser.messages.Len(), parser.packets.Len(), packetLen, processedPackets)
+
 	for _, m := range parser.m {
 		if now.Sub(m.End) > parser.messageExpire {
 			m.TimedOut = true
