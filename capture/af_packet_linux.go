@@ -1,13 +1,10 @@
 // +build linux
 
-package main
+package capture
 
 import (
 	"flag"
 	"fmt"
-	"log"
-	"os"
-	"runtime/pprof"
 	"time"
 
 	"github.com/google/gopacket"
