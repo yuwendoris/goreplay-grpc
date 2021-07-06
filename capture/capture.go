@@ -284,14 +284,16 @@ func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err erro
 	if err != nil {
 		return nil, fmt.Errorf("PCAP Activate device error: %q, interface: %q", err, ifi.Name)
 	}
-	if l.BPFFilter == "" {
-		l.BPFFilter = l.Filter(ifi)
+
+	bpfFilter := l.BPFFilter
+	if bpfFilter == "" {
+		bpfFilter = l.Filter(ifi)
 	}
-	fmt.Println("Interface:", ifi.Name, ". BPF Filter:", l.BPFFilter)
-	err = handle.SetBPFFilter(l.BPFFilter)
+	fmt.Println("Interface:", ifi.Name, ". BPF Filter:", bpfFilter)
+	err = handle.SetBPFFilter(bpfFilter)
 	if err != nil {
 		handle.Close()
-		return nil, fmt.Errorf("BPF filter error: %q%s, interface: %q", err, l.BPFFilter, ifi.Name)
+		return nil, fmt.Errorf("BPF filter error: %q%s, interface: %q", err, bpfFilter, ifi.Name)
 	}
 	return
 }
