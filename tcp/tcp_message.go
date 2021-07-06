@@ -63,13 +63,13 @@ func (m *Message) UUID() []byte {
 	return uuidHex
 }
 
-func (m *Message) add(packet *Packet) {
+func (m *Message) add(packet *Packet) bool {
 	// fmt.Println("SEQ:", packet.Seq, " - ", len(packet.Payload))
 
 	// Skip duplicates
 	for _, p := range m.packets {
 		if p.Seq == packet.Seq {
-			return
+			return false
 		}
 	}
 
@@ -93,6 +93,8 @@ func (m *Message) add(packet *Packet) {
 	if packet.Timestamp.After(m.End) || m.End.IsZero() {
 		m.End = packet.Timestamp
 	}
+
+	return true
 }
 
 // Packets returns packets of the message
@@ -201,7 +203,7 @@ func NewMessageParser(maxSize size.Size, messageExpire time.Duration, allowIncom
 
 	parser.messageExpire = messageExpire
 	if parser.messageExpire == 0 {
-		parser.messageExpire = time.Millisecond * 500
+		parser.messageExpire = time.Millisecond * 1000
 	}
 
 	parser.allowIncompete = allowIncompete
@@ -214,7 +216,7 @@ func NewMessageParser(maxSize size.Size, messageExpire time.Duration, allowIncom
 	parser.messages = make(chan *Message, 10000)
 
 	parser.m = make(map[uint64]*Message)
-	parser.ticker = time.NewTicker(time.Millisecond * 50)
+	parser.ticker = time.NewTicker(time.Millisecond * 100)
 	parser.close = make(chan struct{}, 1)
 	go parser.wait()
 	return parser
@@ -256,21 +258,26 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 	m, ok := parser.m[pckt.MessageID()]
 	switch {
 	case ok:
-		parser.addPacket(m, pckt)
+		if !parser.addPacket(m, pckt) {
+			packetPool.Put(pckt)
+		}
 		return
 	case parser.Start != nil:
 		if in, out = parser.Start(pckt); !(in || out) {
 			// Packet can be received out of order, so give it another chance
-			if pckt.Retry < 1 && len(pckt.Payload) > 0 {
+			if pckt.Retry < 2 && len(pckt.Payload) > 0 {
 				// Requeue not known packets
 				pckt.Retry++
 
 				select {
 				case parser.packets <- pckt:
+					return
 				default:
-					packetPool.Put(pckt)
 				}
 			}
+
+			packetPool.Put(pckt)
+
 			return
 		}
 	default:
@@ -285,16 +292,18 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 	parser.addPacket(m, pckt)
 }
 
-func (parser *MessageParser) addPacket(m *Message, pckt *Packet) {
+func (parser *MessageParser) addPacket(m *Message, pckt *Packet) bool {
 	trunc := m.Length + len(pckt.Payload) - int(parser.maxSize)
 	if trunc > 0 {
 		m.Truncated = true
 		pckt.Payload = pckt.Payload[:int(parser.maxSize)-m.Length]
 	}
-	m.add(pckt)
+	if !m.add(pckt) {
+		return false
+	}
 
 	if trunc > 0 {
-		return
+		return false
 	}
 
 	// If we are using protocol parsing, like HTTP, depend on its parsing func.
@@ -304,6 +313,8 @@ func (parser *MessageParser) addPacket(m *Message, pckt *Packet) {
 			parser.Emit(m)
 		}
 	}
+
+	return true
 }
 
 func (parser *MessageParser) Read() *Message {
@@ -325,12 +336,15 @@ func GetUnexportedField(field reflect.Value) interface{} {
 	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
 }
 
+var failMsg int
+
 func (parser *MessageParser) timer(now time.Time) {
-	// fmt.Println(parser.messages.Len(), parser.packets.Len(), packetLen, processedPackets)
+	packetLen = 0
 
 	for _, m := range parser.m {
 		if now.Sub(m.End) > parser.messageExpire {
 			m.TimedOut = true
+			failMsg++
 			if parser.End == nil || parser.allowIncompete {
 				parser.Emit(m)
 			} else {

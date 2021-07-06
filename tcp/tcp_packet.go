@@ -4,6 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	_ "runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/google/gopacket"
@@ -11,33 +13,95 @@ import (
 
 func copySlice(b, a []byte) []byte {
 	if cap(b) < len(a) {
-		b = make([]byte, len(a))
+		diff := (cap(b) - len(b)) + len(a)
+		b = append(b, make([]byte, diff)...)
 	}
 	copy(b, a)
-	return b[:len(a)]
+	return b
 }
 
-var packetPool = NewPool(10000)
+var now time.Time
+
+func init() {
+	go func() {
+		for {
+			// Accurate enough
+			now = time.Now()
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+}
+
+var packetPool = NewPool(10000, 1)
 
 // Pool holds Clients.
 type Pool struct {
-	pool chan *Packet
+	packets chan *Packet
+	ttl     int
 }
 
 // NewPool creates a new pool of Clients.
-func NewPool(max int) *Pool {
-	return &Pool{
-		pool: make(chan *Packet, max),
+func NewPool(max int, ttl int) *Pool {
+	pool := &Pool{
+		packets: make(chan *Packet, max),
+		ttl:     ttl,
 	}
+
+	// Ensure that memory released over time
+	go func() {
+		var released int
+		// GC
+		for {
+			for i := 0; i < 1000; i++ {
+				select {
+				case c := <-pool.packets:
+					if now.Sub(c.created) < time.Duration(ttl)*time.Second {
+						select {
+						case pool.packets <- c:
+						default:
+							c.buf = nil
+							c.gc = true
+							released++
+						}
+					} else {
+						// Else GC
+						c.buf = nil
+						c.gc = true
+						released++
+					}
+				default:
+					break
+				}
+			}
+
+			if released > 500 {
+				debug.FreeOSMemory()
+				released = 0
+			}
+
+			time.Sleep(1000 * time.Millisecond)
+		}
+	}()
+
+	return pool
 }
 
 // Borrow a Client from the pool.
 func (p *Pool) Get() *Packet {
 	var c *Packet
 	select {
-	case c = <-p.pool:
+	case c = <-p.packets:
 	default:
 		c = new(Packet)
+		c.created = now
+
+		// Use this technique to find if pool leaks, and objects get GCd
+		//
+		// runtime.SetFinalizer(c, func(p *Packet) {
+		// 	if !p.gc {
+		// 		panic("Pool leak")
+		// 	}
+		// })
 	}
 	return c
 }
@@ -45,10 +109,16 @@ func (p *Pool) Get() *Packet {
 // Return returns a Client to the pool.
 func (p *Pool) Put(c *Packet) {
 	select {
-	case p.pool <- c:
+	case p.packets <- c:
 	default:
-		// let it go, let it go...
+		c.gc = true
+		c.buf = nil
+		// if pool overloaded, let it go
 	}
+}
+
+func (p *Pool) Len() int {
+	return len(p.packets)
 }
 
 /*
@@ -70,6 +140,10 @@ type Packet struct {
 	CaptureLength      int
 	Timestamp          time.Time
 	Payload            []byte
+	buf                []byte
+
+	created time.Time
+	gc      bool
 }
 
 // ParsePacket parse raw packets
@@ -86,6 +160,7 @@ func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo, all
 func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo, allowEmpty bool) error {
 	pckt.Retry = 0
 	pckt.messageID = 0
+	pckt.buf = pckt.buf[:]
 
 	// TODO: check resolution
 	pckt.Timestamp = cp.Timestamp
@@ -187,7 +262,8 @@ func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.Capture
 	pckt.RST = transLayer[13]&0x04 != 0
 	pckt.ACK = transLayer[13]&0x10 != 0
 	pckt.Lost = uint32(cp.Length - cp.CaptureLength)
-	pckt.Payload = copySlice(pckt.Payload, ndata[dOf:])
+	pckt.buf = copySlice(pckt.buf, ndata[dOf:])
+	pckt.Payload = pckt.buf[:len(ndata[dOf:])]
 
 	return nil
 }
