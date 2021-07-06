@@ -11,13 +11,23 @@ import (
 	"github.com/google/gopacket"
 )
 
-func copySlice(b, a []byte) []byte {
-	if cap(b) < len(a) {
-		diff := (cap(b) - len(b)) + len(a)
-		b = append(b, make([]byte, diff)...)
+func copySlice(to []byte, from ...[]byte) ([]byte, int) {
+	var totalLen int
+	for _, s := range from {
+		totalLen += len(s)
 	}
-	copy(b, a)
-	return b
+
+	if cap(to) < totalLen {
+		diff := (cap(to) - len(to)) + totalLen
+		to = append(to, make([]byte, diff)...)
+	}
+
+	var i int
+	for _, s := range from {
+		i += copy(to[i:], s)
+	}
+
+	return to, i
 }
 
 var now time.Time
@@ -32,17 +42,17 @@ func init() {
 	}()
 }
 
-var packetPool = NewPool(10000, 1)
+var packetPool = NewPacketPool(10000, 1)
 
 // Pool holds Clients.
-type Pool struct {
+type pktPool struct {
 	packets chan *Packet
 	ttl     int
 }
 
 // NewPool creates a new pool of Clients.
-func NewPool(max int, ttl int) *Pool {
-	pool := &Pool{
+func NewPacketPool(max int, ttl int) *pktPool {
+	pool := &pktPool{
 		packets: make(chan *Packet, max),
 		ttl:     ttl,
 	}
@@ -87,7 +97,7 @@ func NewPool(max int, ttl int) *Pool {
 }
 
 // Borrow a Client from the pool.
-func (p *Pool) Get() *Packet {
+func (p *pktPool) Get() *Packet {
 	var c *Packet
 	select {
 	case c = <-p.packets:
@@ -107,7 +117,7 @@ func (p *Pool) Get() *Packet {
 }
 
 // Return returns a Client to the pool.
-func (p *Pool) Put(c *Packet) {
+func (p *pktPool) Put(c *Packet) {
 	select {
 	case p.packets <- c:
 	default:
@@ -117,7 +127,7 @@ func (p *Pool) Put(c *Packet) {
 	}
 }
 
-func (p *Pool) Len() int {
+func (p *pktPool) Len() int {
 	return len(p.packets)
 }
 
@@ -262,7 +272,7 @@ func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.Capture
 	pckt.RST = transLayer[13]&0x04 != 0
 	pckt.ACK = transLayer[13]&0x10 != 0
 	pckt.Lost = uint32(cp.Length - cp.CaptureLength)
-	pckt.buf = copySlice(pckt.buf, ndata[dOf:])
+	pckt.buf, _ = copySlice(pckt.buf, ndata[dOf:])
 	pckt.Payload = pckt.buf[:len(ndata[dOf:])]
 
 	return nil

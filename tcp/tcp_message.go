@@ -12,6 +12,95 @@ import (
 	"github.com/buger/goreplay/size"
 )
 
+var bufferPool = NewBufferPool(1000, 1)
+
+type buf struct {
+	b       []byte
+	created time.Time
+	gc      bool
+}
+
+type bufPool struct {
+	buffers chan *buf
+	ttl     int
+}
+
+func NewBufferPool(max int, ttl int) *bufPool {
+	pool := &bufPool{
+		buffers: make(chan *buf, max),
+		ttl:     ttl,
+	}
+
+	// Ensure that memory released over time
+	go func() {
+		var released int
+		// GC
+		for {
+			for i := 0; i < 100; i++ {
+				select {
+				case c := <-pool.buffers:
+					if now.Sub(c.created) < time.Duration(ttl)*time.Second {
+						select {
+						case pool.buffers <- c:
+						default:
+							c.b = nil
+							c.gc = true
+							released++
+						}
+					} else {
+						// Else GC
+						c.b = nil
+						c.gc = true
+						released++
+					}
+				default:
+					break
+				}
+			}
+
+			time.Sleep(1000 * time.Millisecond)
+		}
+	}()
+
+	return pool
+}
+
+// Borrow a Client from the pool.
+func (p *bufPool) Get() *buf {
+	var c *buf
+	select {
+	case c = <-p.buffers:
+	default:
+		c = new(buf)
+		c.b = make([]byte, 1024)
+		c.created = now
+
+		// Use this technique to find if pool leaks, and objects get GCd
+		//
+		// runtime.SetFinalizer(c, func(p *buf) {
+		// 	if !p.gc {
+		// 		panic("Pool leak")
+		// 	}
+		// })
+	}
+	return c
+}
+
+// Return returns a Client to the pool.
+func (p *bufPool) Put(c *buf) {
+	select {
+	case p.buffers <- c:
+	default:
+		c.gc = true
+		c.b = nil
+		// if pool overloaded, let it go
+	}
+}
+
+func (p *bufPool) Len() int {
+	return len(p.buffers)
+}
+
 // Stats every message carry its own stats object
 type Stats struct {
 	LostData  int
@@ -31,6 +120,7 @@ type Message struct {
 	packets  []*Packet
 	parser   *MessageParser
 	feedback interface{}
+	dataBuf  *buf
 	Stats
 }
 
@@ -128,18 +218,20 @@ func (m *Message) PacketData() [][]byte {
 
 // Data returns data in this message
 func (m *Message) Data() []byte {
-	var totalLen int
-	for _, p := range m.packets {
-		totalLen += len(p.Payload)
-	}
-	tmp := make([]byte, totalLen)
+	m.dataBuf = bufferPool.Get()
 
-	var i int
-	for _, p := range m.packets {
-		i += copy(tmp[i:], p.Payload)
+	// var totalLen int
+	// for _, p := range m.packets {
+	// 	totalLen += len(p.Payload)
+	// }
+	// tmp := make([]byte, totalLen)
+	var n int
+	if m.dataBuf == nil {
+		panic("asdsd")
 	}
+	m.dataBuf.b, n = copySlice(m.dataBuf.b, m.PacketData()...)
 
-	return tmp
+	return m.dataBuf.b[:n]
 }
 
 // SetProtocolState set feedback/data that can be used later, e.g with End or Start hint
@@ -161,6 +253,10 @@ func (m *Message) Finalize() {
 	// Allow re-use memory
 	for _, p := range m.packets {
 		packetPool.Put(p)
+	}
+
+	if m.dataBuf != nil {
+		bufferPool.Put(m.dataBuf)
 	}
 }
 
