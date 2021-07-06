@@ -40,10 +40,6 @@ func main() {
 		runtime.GOMAXPROCS(runtime.NumCPU() * 2)
 	}
 
-	if os.Getenv("GOGC") == "" {
-		debug.SetGCPercent(500)
-	}
-
 	args := os.Args[1:]
 	var plugins *InOutPlugins
 	if len(args) > 0 && args[0] == "file-server" {
