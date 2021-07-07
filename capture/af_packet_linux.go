@@ -3,7 +3,6 @@
 package capture
 
 import (
-	"flag"
 	"fmt"
 	"time"
 
@@ -14,17 +13,6 @@ import (
 	"golang.org/x/net/bpf"
 
 	_ "github.com/google/gopacket/layers"
-)
-
-var (
-	iface      = flag.String("i", "any", "Interface to read from")
-	cpuprofile = flag.String("cpuprofile", "", "If non-empty, write CPU profile here")
-	snaplen    = flag.Int("s", 0, "Snaplen, if <= 0, use 65535")
-	bufferSize = flag.Int("b", 8, "Interface buffersize (MB)")
-	filter     = flag.String("f", "port not 22", "BPF filter")
-	count      = flag.Int64("c", -1, "If >= 0, # of packets to capture before returning")
-	verbose    = flag.Int64("log_every", 1, "Write a log every X packets")
-	addVLAN    = flag.Bool("add_vlan", false, "If true, add VLAN header")
 )
 
 type afpacketHandle struct {
@@ -42,7 +30,7 @@ func newAfpacketHandle(device string, snaplen int, block_size int, num_blocks in
 			afpacket.OptFrameSize(snaplen),
 			afpacket.OptBlockSize(block_size),
 			afpacket.OptNumBlocks(num_blocks),
-			afpacket.OptAddVLANHeader(useVLAN),
+			afpacket.OptAddVLANHeader(false),
 			afpacket.OptPollTimeout(timeout),
 			afpacket.SocketRaw,
 			afpacket.TPacketVersion3)
@@ -52,7 +40,7 @@ func newAfpacketHandle(device string, snaplen int, block_size int, num_blocks in
 			afpacket.OptFrameSize(snaplen),
 			afpacket.OptBlockSize(block_size),
 			afpacket.OptNumBlocks(num_blocks),
-			afpacket.OptAddVLANHeader(useVLAN),
+			afpacket.OptAddVLANHeader(false),
 			afpacket.OptPollTimeout(timeout),
 			afpacket.SocketRaw,
 			afpacket.TPacketVersion3)
