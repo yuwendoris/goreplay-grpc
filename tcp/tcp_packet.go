@@ -62,10 +62,11 @@ func NewPacketPool(max int, ttl int) *pktPool {
 		var released int
 		// GC
 		for {
-			for i := 0; i < 1000; i++ {
+			for i := 0; i < 500; i++ {
 				select {
 				case c := <-pool.packets:
-					if now.Sub(c.created) < time.Duration(ttl)*time.Second {
+					// GC If buffer is too big and lived for too long
+					if len(c.buf) < 16384 && now.Sub(c.created) < time.Duration(ttl)*time.Second {
 						select {
 						case pool.packets <- c:
 						default:
