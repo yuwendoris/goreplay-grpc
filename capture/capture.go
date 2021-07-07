@@ -229,9 +229,10 @@ func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err erro
 	}
 	defer inactive.CleanUp()
 
-	if l.TimestampType != "" {
+	if l.TimestampType != "" && l.TimestampType != "go" {
 		var ts pcap.TimestampSource
 		ts, err = pcap.TimestampSourceFromString(l.TimestampType)
+		fmt.Println("Setting custom Timestamp Source. Supported values: `simple`, ", inactive.SupportedTimestamps())
 		err = inactive.SetTimestampSource(ts)
 		if err != nil {
 			return nil, fmt.Errorf("%q: supported timestamps: %q, interface: %q", err, inactive.SupportedTimestamps(), ifi.Name)
@@ -345,7 +346,12 @@ func (l *Listener) read(handler PacketHandler) {
 				default:
 					data, ci, err := hndl.handler.ZeroCopyReadPacketData()
 					if err == nil {
+						if l.TimestampType == "go" {
+							ci.Timestamp = time.Now()
+						}
+
 						pckt, err := tcp.ParsePacket(data, linkType, linkSize, &ci, false)
+
 						if err == nil {
 							for _, p := range l.ports {
 								if pckt.DstPort == p {

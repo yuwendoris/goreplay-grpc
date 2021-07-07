@@ -9,6 +9,8 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/buger/goreplay/simpletime"
+
 	"github.com/google/gopacket"
 )
 
@@ -31,8 +33,6 @@ func copySlice(to []byte, from ...[]byte) ([]byte, int) {
 	return to, i
 }
 
-var now time.Time
-
 var stats *expvar.Map
 var bufPoolCount *expvar.Int
 var releasedCount *expvar.Int
@@ -45,14 +45,6 @@ func init() {
 	stats.Init()
 	stats.Set("buffer_pool_count", bufPoolCount)
 	stats.Set("buffer_released", releasedCount)
-
-	go func() {
-		for {
-			// Accurate enough
-			now = time.Now()
-			time.Sleep(500 * time.Millisecond)
-		}
-	}()
 }
 
 var packetPool = NewPacketPool(10000, 1)
@@ -79,7 +71,7 @@ func NewPacketPool(max int, ttl int) *pktPool {
 				select {
 				case c := <-pool.packets:
 					// GC If buffer is too big and lived for too long
-					if len(c.buf) < 8192 || now.Sub(c.created) < time.Duration(ttl)*time.Second {
+					if len(c.buf) < 8192 || simpletime.Now.Sub(c.created) < time.Duration(ttl)*time.Second {
 						select {
 						case pool.packets <- c:
 							// Jump to next item in for loop
@@ -120,7 +112,7 @@ func (p *pktPool) Get() *Packet {
 	default:
 		stats.Add("active_packet_count", 1)
 		c = new(Packet)
-		c.created = now
+		c.created = simpletime.Now
 
 		// Use this technique to find if pool leaks, and objects get GCd
 		//

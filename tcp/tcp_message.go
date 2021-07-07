@@ -9,6 +9,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/buger/goreplay/simpletime"
 	"github.com/buger/goreplay/size"
 )
 
@@ -39,7 +40,7 @@ func NewBufferPool(max int, ttl int) *bufPool {
 			for i := 0; i < 100; i++ {
 				select {
 				case c := <-pool.buffers:
-					if now.Sub(c.created) < time.Duration(ttl)*time.Second {
+					if simpletime.Now.Sub(c.created) < time.Duration(ttl)*time.Second {
 						select {
 						case pool.buffers <- c:
 						default:
@@ -81,7 +82,7 @@ func (p *bufPool) Get() *buf {
 
 		c = new(buf)
 		c.b = make([]byte, 1024)
-		c.created = now
+		c.created = simpletime.Now
 
 		// Use this technique to find if pool leaks, and objects get GCd
 		//
