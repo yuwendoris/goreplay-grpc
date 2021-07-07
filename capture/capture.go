@@ -232,7 +232,7 @@ func (l *Listener) PcapHandle(ifi pcap.Interface) (handle *pcap.Handle, err erro
 	if l.TimestampType != "" && l.TimestampType != "go" {
 		var ts pcap.TimestampSource
 		ts, err = pcap.TimestampSourceFromString(l.TimestampType)
-		fmt.Println("Setting custom Timestamp Source. Supported values: `simple`, ", inactive.SupportedTimestamps())
+		fmt.Println("Setting custom Timestamp Source. Supported values: `go`, ", inactive.SupportedTimestamps())
 		err = inactive.SetTimestampSource(ts)
 		if err != nil {
 			return nil, fmt.Errorf("%q: supported timestamps: %q, interface: %q", err, inactive.SupportedTimestamps(), ifi.Name)
@@ -517,11 +517,20 @@ func (l *Listener) setInterfaces() (err error) {
 	}
 
 	for _, pi := range pifis {
+		if len(pi.Addresses) == 0 {
+			continue
+		}
+
 		var ni net.Interface
 		for _, i := range ifis {
-			if i.Name == pi.Name {
-				ni = i
-				break
+			addrs, _ := i.Addrs()
+			for _, a := range addrs {
+				for _, pa := range pi.Addresses {
+					if strings.HasPrefix(a.String(), pa.IP.String()) {
+						ni = i
+						break
+					}
+				}
 			}
 		}
 
@@ -537,9 +546,7 @@ func (l *Listener) setInterfaces() (err error) {
 			return
 		}
 
-		if len(pi.Addresses) != 0 {
-			l.Interfaces = append(l.Interfaces, pi)
-		}
+		l.Interfaces = append(l.Interfaces, pi)
 	}
 	return
 }
