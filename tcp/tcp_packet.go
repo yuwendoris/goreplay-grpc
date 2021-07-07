@@ -2,6 +2,7 @@ package tcp
 
 import (
 	"encoding/binary"
+	"expvar"
 	"fmt"
 	"net"
 	_ "runtime"
@@ -32,7 +33,19 @@ func copySlice(to []byte, from ...[]byte) ([]byte, int) {
 
 var now time.Time
 
+var stats *expvar.Map
+var bufPoolCount *expvar.Int
+var releasedCount *expvar.Int
+
 func init() {
+	bufPoolCount = new(expvar.Int)
+	releasedCount = new(expvar.Int)
+
+	stats = expvar.NewMap("tcp")
+	stats.Init()
+	stats.Set("buffer_pool_count", bufPoolCount)
+	stats.Set("buffer_released", releasedCount)
+
 	go func() {
 		for {
 			// Accurate enough
@@ -59,35 +72,37 @@ func NewPacketPool(max int, ttl int) *pktPool {
 
 	// Ensure that memory released over time
 	go func() {
-		var released int
 		// GC
+		var released int
 		for {
 			for i := 0; i < 500; i++ {
 				select {
 				case c := <-pool.packets:
 					// GC If buffer is too big and lived for too long
-					if len(c.buf) < 16384 && now.Sub(c.created) < time.Duration(ttl)*time.Second {
+					if len(c.buf) < 8192 || now.Sub(c.created) < time.Duration(ttl)*time.Second {
 						select {
 						case pool.packets <- c:
+							// Jump to next item in for loop
+							continue
 						default:
-							c.buf = nil
-							c.gc = true
-							released++
 						}
-					} else {
-						// Else GC
-						c.buf = nil
-						c.gc = true
-						released++
 					}
+
+					released++
+
+					// Else GC
+					c.buf = nil
+					c.gc = true
+
+					stats.Add("active_packet_count", -1)
 				default:
 					break
 				}
 			}
 
 			if released > 500 {
-				debug.FreeOSMemory()
 				released = 0
+				debug.FreeOSMemory()
 			}
 
 			time.Sleep(1000 * time.Millisecond)
@@ -103,6 +118,7 @@ func (p *pktPool) Get() *Packet {
 	select {
 	case c = <-p.packets:
 	default:
+		stats.Add("active_packet_count", 1)
 		c = new(Packet)
 		c.created = now
 
@@ -122,6 +138,7 @@ func (p *pktPool) Put(c *Packet) {
 	select {
 	case p.packets <- c:
 	default:
+		stats.Add("active_packet_count", -1)
 		c.gc = true
 		c.buf = nil
 		// if pool overloaded, let it go

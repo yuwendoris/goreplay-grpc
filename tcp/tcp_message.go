@@ -43,11 +43,13 @@ func NewBufferPool(max int, ttl int) *bufPool {
 						select {
 						case pool.buffers <- c:
 						default:
+							stats.Add("active_buffer_count", -1)
 							c.b = nil
 							c.gc = true
 							released++
 						}
 					} else {
+						stats.Add("active_buffer_count", -1)
 						// Else GC
 						c.b = nil
 						c.gc = true
@@ -57,6 +59,9 @@ func NewBufferPool(max int, ttl int) *bufPool {
 					break
 				}
 			}
+
+			bufPoolCount.Set(int64(len(pool.buffers)))
+			releasedCount.Set(int64(released))
 
 			time.Sleep(1000 * time.Millisecond)
 		}
@@ -71,6 +76,9 @@ func (p *bufPool) Get() *buf {
 	select {
 	case c = <-p.buffers:
 	default:
+		stats.Add("total_alloc_buffer_count", 1)
+		stats.Add("active_buffer_count", 1)
+
 		c = new(buf)
 		c.b = make([]byte, 1024)
 		c.created = now
@@ -91,6 +99,7 @@ func (p *bufPool) Put(c *buf) {
 	select {
 	case p.buffers <- c:
 	default:
+		stats.Add("active_buffers", -1)
 		c.gc = true
 		c.b = nil
 		// if pool overloaded, let it go
@@ -392,6 +401,7 @@ func (parser *MessageParser) addPacket(m *Message, pckt *Packet) bool {
 	trunc := m.Length + len(pckt.Payload) - int(parser.maxSize)
 	if trunc > 0 {
 		m.Truncated = true
+		stats.Add("message_timeout_count", 1)
 		pckt.Payload = pckt.Payload[:int(parser.maxSize)-m.Length]
 	}
 	if !m.add(pckt) {
@@ -423,6 +433,8 @@ func (parser *MessageParser) Messages() chan *Message {
 }
 
 func (parser *MessageParser) Emit(m *Message) {
+	stats.Add("message_count", 1)
+
 	delete(parser.m, m.packets[0].MessageID())
 
 	parser.messages <- m
@@ -440,6 +452,7 @@ func (parser *MessageParser) timer(now time.Time) {
 	for _, m := range parser.m {
 		if now.Sub(m.End) > parser.messageExpire {
 			m.TimedOut = true
+			stats.Add("message_timeout_count", 1)
 			failMsg++
 			if parser.End == nil || parser.allowIncompete {
 				parser.Emit(m)
