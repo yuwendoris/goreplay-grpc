@@ -118,7 +118,7 @@ func NewPlugins() *InOutPlugins {
 	}
 
 	for _, options := range Settings.InputFile {
-		plugins.registerPlugin(NewFileInput, options, Settings.InputFileLoop, Settings.InputFileReadDepth, Settings.InputFileDryRun)
+		plugins.registerPlugin(NewFileInput, options, Settings.InputFileLoop, Settings.InputFileReadDepth, Settings.InputFileMaxWait, Settings.InputFileDryRun)
 	}
 
 	for _, path := range Settings.OutputFile {

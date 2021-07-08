@@ -196,12 +196,13 @@ type FileInput struct {
 	loop        bool
 	readDepth   int
 	dryRun      bool
+	maxWait     time.Duration
 
 	stats *expvar.Map
 }
 
 // NewFileInput constructor for FileInput. Accepts file path as argument.
-func NewFileInput(path string, loop bool, readDepth int, dryRun bool) (i *FileInput) {
+func NewFileInput(path string, loop bool, readDepth int, maxWait time.Duration, dryRun bool) (i *FileInput) {
 	i = new(FileInput)
 	i.data = make(chan []byte, 1000)
 	i.exit = make(chan bool)
@@ -211,6 +212,7 @@ func NewFileInput(path string, loop bool, readDepth int, dryRun bool) (i *FileIn
 	i.readDepth = readDepth
 	i.stats = expvar.NewMap("file-" + path)
 	i.dryRun = dryRun
+	i.maxWait = maxWait
 
 	if err := i.init(); err != nil {
 		return
@@ -349,6 +351,10 @@ func (i *FileInput) emit() {
 
 			if i.speedFactor != 1 {
 				diff = int64(float64(diff) / i.speedFactor)
+			}
+
+			if i.maxWait > 0 && diff > int64(i.maxWait) {
+				diff = int64(i.maxWait)
 			}
 
 			if diff >= 0 {

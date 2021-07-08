@@ -39,7 +39,7 @@ func TestFileOutput(t *testing.T) {
 	emitter.Close()
 
 	var counter int64
-	input2 := NewFileInput("/tmp/test_requests.gor", false, 100, false)
+	input2 := NewFileInput("/tmp/test_requests.gor", false, 100, 0, false)
 	output2 := NewTestOutput(func(*Message) {
 		atomic.AddInt64(&counter, 1)
 		wg.Done()
