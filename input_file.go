@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"container/heap"
 	"errors"
 	"fmt"
 	"io"
@@ -20,27 +21,71 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
-type fileInputReader struct {
-	reader    *bufio.Reader
+type filePayload struct {
 	data      []byte
-	file      io.ReadCloser
 	timestamp int64
-	closed    int32 // Value of 0 indicates that the file is still open.
-	s3        bool
 }
 
-func (f *fileInputReader) parseNext() error {
+// An IntHeap is a min-heap of ints.
+type payloadQueue struct {
+	sync.RWMutex
+	s []*filePayload
+}
+
+func (h payloadQueue) Len() int           { return len(h.s) }
+func (h payloadQueue) Less(i, j int) bool { return h.s[i].timestamp < h.s[j].timestamp }
+func (h payloadQueue) Swap(i, j int)      { h.s[i], h.s[j] = h.s[j], h.s[i] }
+
+func (h *payloadQueue) Push(x interface{}) {
+	// Push and Pop use pointer receivers because they modify the slice's length,
+	// not just its contents.
+	h.s = append(h.s, x.(*filePayload))
+}
+
+func (h *payloadQueue) Pop() interface{} {
+	old := h.s
+	n := len(old)
+	x := old[n-1]
+	h.s = old[0 : n-1]
+	return x
+}
+
+func (h payloadQueue) Idx(i int) *filePayload {
+	h.RLock()
+	defer h.RUnlock()
+
+	return h.s[i]
+}
+
+type fileInputReader struct {
+	reader    *bufio.Reader
+	file      io.ReadCloser
+	closed    int32 // Value of 0 indicates that the file is still open.
+	s3        bool
+	queue     payloadQueue
+	readDepth int
+}
+
+func (f *fileInputReader) parse(init chan struct{}) error {
 	payloadSeparatorAsBytes := []byte(payloadSeparator)
 	var buffer bytes.Buffer
+	var initialized bool
+
 	for {
 		line, err := f.reader.ReadBytes('\n')
 
 		if err != nil {
 			if err != io.EOF {
 				Debug(1, err)
-			} else {
-				f.Close()
 			}
+
+			f.Close()
+
+			if !initialized {
+				close(init)
+				initialized = true
+			}
+
 			return err
 		}
 
@@ -48,21 +93,51 @@ func (f *fileInputReader) parseNext() error {
 			asBytes := buffer.Bytes()
 			meta := payloadMeta(asBytes)
 
-			f.timestamp, _ = strconv.ParseInt(string(meta[2]), 10, 64)
-			f.data = asBytes[:len(asBytes)-1]
+			timestamp, _ := strconv.ParseInt(string(meta[2]), 10, 64)
+			data := asBytes[:len(asBytes)-1]
 
-			return nil
+			f.queue.Lock()
+			heap.Push(&f.queue, &filePayload{
+				timestamp: timestamp,
+				data:      data,
+			})
+			f.queue.Unlock()
+
+			for {
+				if f.queue.Len() < f.readDepth {
+					break
+				}
+
+				if !initialized {
+					close(init)
+					initialized = true
+				}
+
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			buffer = bytes.Buffer{}
+			continue
 		}
 
 		buffer.Write(line)
 	}
-
 }
 
-func (f *fileInputReader) ReadPayload() []byte {
-	defer f.parseNext()
+func (f *fileInputReader) wait() {
+	for {
+		if atomic.LoadInt32(&f.closed) == 1 {
+			return
+		}
 
-	return f.data
+		if f.queue.Len() > 0 {
+			return
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return
 }
 
 // Close closes this plugin
@@ -75,7 +150,7 @@ func (f *fileInputReader) Close() error {
 	return nil
 }
 
-func newFileInputReader(path string) *fileInputReader {
+func newFileInputReader(path string, readDepth int) *fileInputReader {
 	var file io.ReadCloser
 	var err error
 
@@ -90,7 +165,7 @@ func newFileInputReader(path string) *fileInputReader {
 		return nil
 	}
 
-	r := &fileInputReader{file: file, closed: 0}
+	r := &fileInputReader{file: file, closed: 0, readDepth: readDepth}
 	if strings.HasSuffix(path, ".gz") {
 		gzReader, err := gzip.NewReader(file)
 		if err != nil {
@@ -102,7 +177,11 @@ func newFileInputReader(path string) *fileInputReader {
 		r.reader = bufio.NewReader(file)
 	}
 
-	r.parseNext()
+	heap.Init(&r.queue)
+
+	init := make(chan struct{})
+	go r.parse(init)
+	<-init
 
 	return r
 }
@@ -116,16 +195,18 @@ type FileInput struct {
 	readers     []*fileInputReader
 	speedFactor float64
 	loop        bool
+	readDepth   int
 }
 
 // NewFileInput constructor for FileInput. Accepts file path as argument.
-func NewFileInput(path string, loop bool) (i *FileInput) {
+func NewFileInput(path string, loop bool, readDepth int) (i *FileInput) {
 	i = new(FileInput)
 	i.data = make(chan []byte, 1000)
 	i.exit = make(chan bool)
 	i.path = path
 	i.speedFactor = 1
 	i.loop = loop
+	i.readDepth = readDepth
 
 	if err := i.init(); err != nil {
 		return
@@ -176,7 +257,7 @@ func (i *FileInput) init() (err error) {
 	i.readers = make([]*fileInputReader, len(matches))
 
 	for idx, p := range matches {
-		i.readers[idx] = newFileInputReader(p)
+		i.readers[idx] = newFileInputReader(p, i.readDepth)
 	}
 
 	return nil
@@ -201,11 +282,17 @@ func (i *FileInput) String() string {
 // Find reader with smallest timestamp e.g next payload in row
 func (i *FileInput) nextReader() (next *fileInputReader) {
 	for _, r := range i.readers {
-		if r == nil || atomic.LoadInt32(&r.closed) != 0 {
+		if r == nil {
 			continue
 		}
 
-		if next == nil || r.timestamp < next.timestamp {
+		r.wait()
+
+		if r.queue.Len() == 0 {
+			continue
+		}
+
+		if next == nil || r.queue.Idx(0).timestamp > next.queue.Idx(0).timestamp {
 			next = r
 			continue
 		}
@@ -236,19 +323,23 @@ func (i *FileInput) emit() {
 			}
 		}
 
+		reader.queue.RLock()
+		payload := heap.Pop(&reader.queue).(*filePayload)
+		reader.queue.RUnlock()
+
 		if lastTime != -1 {
-			diff := reader.timestamp - lastTime
+			diff := payload.timestamp - lastTime
 
 			if i.speedFactor != 1 {
 				diff = int64(float64(diff) / i.speedFactor)
 			}
 
 			if diff >= 0 {
-				lastTime = reader.timestamp
+				lastTime = payload.timestamp
 				time.Sleep(time.Duration(diff))
 			}
 		} else {
-			lastTime = reader.timestamp
+			lastTime = payload.timestamp
 		}
 
 		// Recheck if we have exited since last check.
@@ -256,7 +347,7 @@ func (i *FileInput) emit() {
 		case <-i.exit:
 			return
 		default:
-			i.data <- reader.ReadPayload()
+			i.data <- payload.data
 		}
 	}
 

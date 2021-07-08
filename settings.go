@@ -45,10 +45,11 @@ type AppSettings struct {
 	OutputTCPConfig TCPOutputConfig
 	OutputTCPStats  bool `json:"output-tcp-stats"`
 
-	InputFile        MultiOption `json:"input-file"`
-	InputFileLoop    bool        `json:"input-file-loop"`
-	OutputFile       MultiOption `json:"output-file"`
-	OutputFileConfig FileOutputConfig
+	InputFile          MultiOption `json:"input-file"`
+	InputFileLoop      bool        `json:"input-file-loop"`
+	InputFileReadDepth int         `json:"input-file-read-depth"`
+	OutputFile         MultiOption `json:"output-file"`
+	OutputFileConfig   FileOutputConfig
 
 	InputRAW MultiOption `json:"input_raw"`
 	RAWInputConfig
@@ -113,6 +114,7 @@ func init() {
 
 	flag.Var(&Settings.InputFile, "input-file", "Read requests from file: \n\tgor --input-file ./requests.gor --output-http staging.com")
 	flag.BoolVar(&Settings.InputFileLoop, "input-file-loop", false, "Loop input files, useful for performance testing.")
+	flag.IntVar(&Settings.InputFileReadDepth, "input-file-read-depth", 100, "GoReplay tries to read and cache multiple records, in advance. In parallel it also perform sorting of requests, if they came out of order. Since it needs hold this buffer in memory, bigger values can cause worse performance")
 
 	flag.Var(&Settings.OutputFile, "output-file", "Write incoming requests to file: \n\tgor --input-raw :80 --output-file ./requests.gor")
 	flag.DurationVar(&Settings.OutputFileConfig.FlushInterval, "output-file-flush-interval", time.Second, "Interval for forcing buffer flush to the file, default: 1s.")
