@@ -6,8 +6,10 @@ import (
 	"compress/gzip"
 	"container/heap"
 	"errors"
+	"expvar"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -51,9 +53,6 @@ func (h *payloadQueue) Pop() interface{} {
 }
 
 func (h payloadQueue) Idx(i int) *filePayload {
-	h.RLock()
-	defer h.RUnlock()
-
 	return h.s[i]
 }
 
@@ -196,10 +195,13 @@ type FileInput struct {
 	speedFactor float64
 	loop        bool
 	readDepth   int
+	dryRun      bool
+
+	stats *expvar.Map
 }
 
 // NewFileInput constructor for FileInput. Accepts file path as argument.
-func NewFileInput(path string, loop bool, readDepth int) (i *FileInput) {
+func NewFileInput(path string, loop bool, readDepth int, dryRun bool) (i *FileInput) {
 	i = new(FileInput)
 	i.data = make(chan []byte, 1000)
 	i.exit = make(chan bool)
@@ -207,6 +209,8 @@ func NewFileInput(path string, loop bool, readDepth int) (i *FileInput) {
 	i.speedFactor = 1
 	i.loop = loop
 	i.readDepth = readDepth
+	i.stats = expvar.NewMap("file-" + path)
+	i.dryRun = dryRun
 
 	if err := i.init(); err != nil {
 		return
@@ -246,7 +250,6 @@ func (i *FileInput) init() (err error) {
 	} else if matches, err = filepath.Glob(i.path); err != nil {
 		Debug(0, "[INPUT-FILE] Wrong file pattern", i.path, err)
 		return
-
 	}
 
 	if len(matches) == 0 {
@@ -260,6 +263,8 @@ func (i *FileInput) init() (err error) {
 		i.readers[idx] = newFileInputReader(p, i.readDepth)
 	}
 
+	i.stats.Add("reader_count", int64(len(matches)))
+
 	return nil
 }
 
@@ -270,6 +275,7 @@ func (i *FileInput) PluginRead() (*Message, error) {
 	case <-i.exit:
 		return nil, ErrorStopped
 	case buf := <-i.data:
+		i.stats.Add("read_from", 1)
 		msg.Meta, msg.Data = payloadMetaWithBody(buf)
 		return &msg, nil
 	}
@@ -292,7 +298,7 @@ func (i *FileInput) nextReader() (next *fileInputReader) {
 			continue
 		}
 
-		if next == nil || r.queue.Idx(0).timestamp > next.queue.Idx(0).timestamp {
+		if next == nil || r.queue.Idx(0).timestamp < next.queue.Idx(0).timestamp {
 			next = r
 			continue
 		}
@@ -303,6 +309,11 @@ func (i *FileInput) nextReader() (next *fileInputReader) {
 
 func (i *FileInput) emit() {
 	var lastTime int64 = -1
+
+	var maxWait, firstWait, minWait int64
+	minWait = math.MaxInt64
+
+	i.stats.Add("negative_wait", 0)
 
 	for {
 		select {
@@ -325,10 +336,16 @@ func (i *FileInput) emit() {
 
 		reader.queue.RLock()
 		payload := heap.Pop(&reader.queue).(*filePayload)
+		i.stats.Add("total_counter", 1)
+		i.stats.Add("total_bytes", int64(len(payload.data)))
 		reader.queue.RUnlock()
 
 		if lastTime != -1 {
 			diff := payload.timestamp - lastTime
+
+			if firstWait == 0 {
+				firstWait = diff
+			}
 
 			if i.speedFactor != 1 {
 				diff = int64(float64(diff) / i.speedFactor)
@@ -336,7 +353,22 @@ func (i *FileInput) emit() {
 
 			if diff >= 0 {
 				lastTime = payload.timestamp
-				time.Sleep(time.Duration(diff))
+
+				if !i.dryRun {
+					time.Sleep(time.Duration(diff))
+				}
+
+				i.stats.Add("total_wait", diff)
+
+				if diff > maxWait {
+					maxWait = diff
+				}
+
+				if diff < minWait {
+					minWait = diff
+				}
+			} else {
+				i.stats.Add("negative_wait", 1)
 			}
 		} else {
 			lastTime = payload.timestamp
@@ -347,12 +379,30 @@ func (i *FileInput) emit() {
 		case <-i.exit:
 			return
 		default:
-			i.data <- payload.data
+			if !i.dryRun {
+				i.data <- payload.data
+			}
 		}
 	}
 
+	i.stats.Set("first_wait", time.Duration(firstWait))
+	i.stats.Set("max_wait", time.Duration(maxWait))
+	i.stats.Set("min_wait", time.Duration(minWait))
+
 	Debug(0, fmt.Sprintf("[INPUT-FILE] FileInput: end of file '%s'\n", i.path))
 
+	if i.dryRun {
+		fmt.Printf("Records found: %v\nFiles processed: %v\nBytes processed: %v\nMax wait: %v\nMin wait: %v\nFirst wait: %v\nIt will take `%v` to replay at current speed.\nFound %v records with out of order timestamp\n",
+			i.stats.Get("total_counter"),
+			i.stats.Get("reader_count"),
+			i.stats.Get("total_bytes"),
+			i.stats.Get("max_wait"),
+			i.stats.Get("min_wait"),
+			i.stats.Get("first_wait"),
+			time.Duration(i.stats.Get("total_wait").(*expvar.Int).Value()),
+			i.stats.Get("negative_wait"),
+		)
+	}
 }
 
 // Close closes this plugin
