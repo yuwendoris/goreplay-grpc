@@ -233,10 +233,11 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 
 	originAddr := strings.Replace(origin.Listener.Addr().String(), "[::]", "127.0.0.1", -1)
 	conf := RAWInputConfig{
-		Engine:        capture.EnginePcap,
-		Expire:        time.Second,
-		Protocol:      ProtocolHTTP,
-		TrackResponse: true,
+		Engine:          capture.EnginePcap,
+		Expire:          time.Second,
+		Protocol:        ProtocolHTTP,
+		TrackResponse:   true,
+		AllowIncomplete: true,
 	}
 	input := NewRAWInput(originAddr, conf)
 
