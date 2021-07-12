@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"net"
 	_ "runtime"
-	"runtime/debug"
+	"sync"
 	"time"
-
-	"github.com/buger/goreplay/simpletime"
+	"unsafe"
 
 	"github.com/google/gopacket"
 )
@@ -21,13 +20,12 @@ func copySlice(to []byte, from ...[]byte) ([]byte, int) {
 	}
 
 	if cap(to) < totalLen {
-		diff := (cap(to) - len(to)) + totalLen
-		to = append(to, make([]byte, diff)...)
+		to = make([]byte, totalLen)
 	}
 
 	var i int
 	for _, s := range from {
-		i += copy(to[i:], s)
+		i += copy(to[i:], (*(*[1 << 30]byte)(unsafe.Pointer(&s)))[:])
 	}
 
 	return to, i
@@ -47,99 +45,33 @@ func init() {
 	stats.Set("buffer_released", releasedCount)
 }
 
-var packetPool = NewPacketPool(10000, 1)
-
-// Pool holds Clients.
-type pktPool struct {
-	packets chan *Packet
-	ttl     int
+type syncPool struct {
+	p *sync.Pool
 }
 
-// NewPool creates a new pool of Clients.
-func NewPacketPool(max int, ttl int) *pktPool {
-	pool := &pktPool{
-		packets: make(chan *Packet, max),
-		ttl:     ttl,
+func (p *syncPool) Get() *Packet {
+	stats.Add("active_packet_count", 1)
+	return p.p.Get().(*Packet)
+}
+
+func (p *syncPool) Put(pkt *Packet) {
+	pkt.buf = pkt.buf[:]
+	pkt.Payload = pkt.Payload[:]
+	p.p.Put(pkt)
+	stats.Add("active_packet_count", -1)
+}
+
+func NewSyncPacketPool() *syncPool {
+	pool := &syncPool{}
+	pool.p = &sync.Pool{
+		New: func() interface{} {
+			return new(Packet)
+		},
 	}
-
-	// Ensure that memory released over time
-	go func() {
-		// GC
-		var released int
-		for {
-			for i := 0; i < 500; i++ {
-				select {
-				case c := <-pool.packets:
-					// GC If buffer is too big and lived for too long
-					if len(c.buf) < 8192 || simpletime.Now.Sub(c.created) < time.Duration(ttl)*time.Second {
-						select {
-						case pool.packets <- c:
-							// Jump to next item in for loop
-							continue
-						default:
-						}
-					}
-
-					released++
-
-					// Else GC
-					c.buf = nil
-					c.gc = true
-
-					stats.Add("active_packet_count", -1)
-				default:
-					break
-				}
-			}
-
-			if released > 500 {
-				released = 0
-				debug.FreeOSMemory()
-			}
-
-			time.Sleep(1000 * time.Millisecond)
-		}
-	}()
-
 	return pool
 }
 
-// Borrow a Client from the pool.
-func (p *pktPool) Get() *Packet {
-	var c *Packet
-	select {
-	case c = <-p.packets:
-	default:
-		stats.Add("active_packet_count", 1)
-		c = new(Packet)
-		c.created = simpletime.Now
-
-		// Use this technique to find if pool leaks, and objects get GCd
-		//
-		// runtime.SetFinalizer(c, func(p *Packet) {
-		// 	if !p.gc {
-		// 		panic("Pool leak")
-		// 	}
-		// })
-	}
-	return c
-}
-
-// Return returns a Client to the pool.
-func (p *pktPool) Put(c *Packet) {
-	select {
-	case p.packets <- c:
-	default:
-		stats.Add("active_packet_count", -1)
-		c.gc = true
-		c.buf = nil
-		// if pool overloaded, let it go
-	}
-}
-
-func (p *pktPool) Len() int {
-	return len(p.packets)
-}
+var packetPool = NewSyncPacketPool()
 
 /*
 Packet represent data and layers of packet.
@@ -282,6 +214,7 @@ func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.Capture
 	pckt.RST = transLayer[13]&0x04 != 0
 	pckt.ACK = transLayer[13]&0x10 != 0
 	pckt.Lost = uint32(cp.Length - cp.CaptureLength)
+
 	pckt.buf, _ = copySlice(pckt.buf, ndata[dOf:])
 	pckt.Payload = pckt.buf[:len(ndata[dOf:])]
 
