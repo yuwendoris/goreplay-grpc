@@ -5,10 +5,7 @@ import (
 	"expvar"
 	"fmt"
 	"net"
-	_ "runtime"
-	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/google/gopacket"
 )
@@ -20,12 +17,13 @@ func copySlice(to []byte, from ...[]byte) ([]byte, int) {
 	}
 
 	if cap(to) < totalLen {
-		to = make([]byte, totalLen)
+		diff := (cap(to) - len(to)) + totalLen
+		to = append(to, make([]byte, diff)...)
 	}
 
 	var i int
 	for _, s := range from {
-		i += copy(to[i:], (*(*[1 << 30]byte)(unsafe.Pointer(&s)))[:])
+		i += copy(to[i:], s)
 	}
 
 	return to, i
@@ -44,34 +42,6 @@ func init() {
 	stats.Set("buffer_pool_count", bufPoolCount)
 	stats.Set("buffer_released", releasedCount)
 }
-
-type syncPool struct {
-	p *sync.Pool
-}
-
-func (p *syncPool) Get() *Packet {
-	stats.Add("active_packet_count", 1)
-	return p.p.Get().(*Packet)
-}
-
-func (p *syncPool) Put(pkt *Packet) {
-	pkt.buf = pkt.buf[:]
-	pkt.Payload = pkt.Payload[:]
-	p.p.Put(pkt)
-	stats.Add("active_packet_count", -1)
-}
-
-func NewSyncPacketPool() *syncPool {
-	pool := &syncPool{}
-	pool.p = &sync.Pool{
-		New: func() interface{} {
-			return new(Packet)
-		},
-	}
-	return pool
-}
-
-var packetPool = NewSyncPacketPool()
 
 /*
 Packet represent data and layers of packet.
@@ -100,9 +70,8 @@ type Packet struct {
 
 // ParsePacket parse raw packets
 func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo, allowEmpty bool) (pckt *Packet, err error) {
-	pckt = packetPool.Get()
+	pckt = new(Packet)
 	if err := pckt.parse(data, lType, lTypeLen, cp, allowEmpty); err != nil {
-		packetPool.Put(pckt)
 		return nil, err
 	}
 
@@ -215,8 +184,7 @@ func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.Capture
 	pckt.ACK = transLayer[13]&0x10 != 0
 	pckt.Lost = uint32(cp.Length - cp.CaptureLength)
 
-	pckt.buf, _ = copySlice(pckt.buf, ndata[dOf:])
-	pckt.Payload = pckt.buf[:len(ndata[dOf:])]
+	pckt.Payload = ndata[dOf:]
 
 	return nil
 }

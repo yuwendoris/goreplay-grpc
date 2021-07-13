@@ -126,8 +126,12 @@ func (m *Message) PacketData() [][]byte {
 
 // Data returns data in this message
 func (m *Message) Data() []byte {
-	var tmp []byte
-	tmp, _ = copySlice(tmp, m.PacketData()...)
+	packetData := m.PacketData()
+	tmp := packetData[0]
+
+	if len(packetData) > 0 {
+		tmp, _ = copySlice(tmp, packetData[1:]...)
+	}
 
 	return tmp
 }
@@ -148,10 +152,7 @@ func (m *Message) Sort() {
 }
 
 func (m *Message) Finalize() {
-	// Allow re-use memory
-	for _, p := range m.packets {
-		packetPool.Put(p)
-	}
+
 }
 
 // Emitter message handler
@@ -241,35 +242,15 @@ func (parser *MessageParser) wait() {
 }
 
 func (parser *MessageParser) processPacket(pckt *Packet) {
-	var in, out bool
+	var in bool
 
 	// Trying to build unique hash, but there is small chance of collision
 	// No matter if it is request or response, all packets in the same message have same
 	m, ok := parser.m[pckt.MessageID()]
 	switch {
 	case ok:
-		if !parser.addPacket(m, pckt) {
-			packetPool.Put(pckt)
-		}
+		parser.addPacket(m, pckt)
 		return
-	case parser.Start != nil:
-		if in, out = parser.Start(pckt); !(in || out) {
-			// Packet can be received out of order, so give it another chance
-			if pckt.Retry < 2 && len(pckt.Payload) > 0 {
-				// Requeue not known packets
-				pckt.Retry++
-
-				select {
-				case parser.packets <- pckt:
-					return
-				default:
-				}
-			}
-
-			packetPool.Put(pckt)
-
-			return
-		}
 	default:
 		in = pckt.Incoming
 	}
