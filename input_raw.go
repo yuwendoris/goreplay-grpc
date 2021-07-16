@@ -122,7 +122,7 @@ func (i *RAWInput) PluginRead() (*Message, error) {
 	}
 
 	var msgType byte = ResponsePayload
-	if msgTCP.IsRequest {
+	if msgTCP.Direction == tcp.DirIncoming {
 		msgType = RequestPayload
 		if i.RealIPHeader != "" {
 			msg.Data = proto.SetHeader(msg.Data, []byte(i.RealIPHeader), []byte(msgTCP.SrcAddr))

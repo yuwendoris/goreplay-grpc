@@ -43,6 +43,14 @@ func init() {
 	stats.Set("buffer_released", releasedCount)
 }
 
+type Dir int
+
+const (
+	DirUnknown = iota
+	DirIncoming
+	DirOutcoming
+)
+
 /*
 Packet represent data and layers of packet.
 parser extracts information from pcap Packet. functions of *Packet doesn't validate if packet is nil,
@@ -50,7 +58,7 @@ calllers must make sure that ParsePacket has'nt returned any error before callin
 function.
 */
 type Packet struct {
-	Incoming           bool
+	Direction          Dir
 	messageID          uint64
 	SrcIP, DstIP       net.IP
 	Version            uint8

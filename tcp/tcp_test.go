@@ -49,7 +49,7 @@ func GetPackets(request bool, start uint32, _len int, payload []byte) []*Packet 
 		ci := &gopacket.CaptureInfo{Length: len(d), CaptureLength: len(d), Timestamp: time.Now()}
 
 		packets[i-start], err = ParsePacket(d, int(layers.LinkTypeLoop), 4, ci, true)
-		packets[i-start].Incoming = request
+		packets[i-start].Direction = DirIncoming
 		if err != nil {
 			panic(err)
 		}
@@ -93,10 +93,10 @@ func TestRequestResponseMapping(t *testing.T) {
 		messages = append(messages, m)
 	}
 
-	assert.Equal(t, messages[0].IsRequest, true)
-	assert.Equal(t, messages[1].IsRequest, false)
-	assert.Equal(t, messages[2].IsRequest, true)
-	assert.Equal(t, messages[3].IsRequest, false)
+	assert.Equal(t, messages[0].Direction, DirIncoming)
+	assert.Equal(t, messages[1].Direction, DirOutcoming)
+	assert.Equal(t, messages[2].Direction, DirIncoming)
+	assert.Equal(t, messages[3].Direction, DirOutcoming)
 
 	assert.Equal(t, messages[0].UUID(), messages[1].UUID())
 	assert.Equal(t, messages[2].UUID(), messages[3].UUID())

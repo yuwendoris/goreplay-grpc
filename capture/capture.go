@@ -357,7 +357,7 @@ func (l *Listener) read(handler PacketHandler) {
 								if pckt.DstPort == p {
 									for _, ip := range hndl.ips {
 										if pckt.DstIP.Equal(ip) {
-											pckt.Incoming = true
+											pckt.Direction = tcp.DirIncoming
 											break
 										}
 									}

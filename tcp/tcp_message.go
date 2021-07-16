@@ -20,7 +20,7 @@ type Stats struct {
 	End       time.Time // last packet's timestamp
 	SrcAddr   string
 	DstAddr   string
-	IsRequest bool
+	Direction Dir
 	TimedOut  bool // timeout before getting the whole message
 	Truncated bool // last packet truncated due to max message size
 	IPversion byte
@@ -40,7 +40,7 @@ func (m *Message) UUID() []byte {
 	pckt := m.packets[0]
 
 	// check if response or request have generated the ID before.
-	if m.IsRequest {
+	if m.Direction == DirIncoming {
 		streamID = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
 			uint64(ip2int(pckt.SrcIP))
 	} else {
@@ -51,7 +51,7 @@ func (m *Message) UUID() []byte {
 	id := make([]byte, 12)
 	binary.BigEndian.PutUint64(id, streamID)
 
-	if m.IsRequest {
+	if m.Direction == DirIncoming {
 		binary.BigEndian.PutUint32(id[8:], pckt.Ack)
 	} else {
 		binary.BigEndian.PutUint32(id[8:], pckt.Seq)
@@ -152,7 +152,6 @@ func (m *Message) Sort() {
 }
 
 func (m *Message) Finalize() {
-
 }
 
 // Emitter message handler
@@ -242,8 +241,6 @@ func (parser *MessageParser) wait() {
 }
 
 func (parser *MessageParser) processPacket(pckt *Packet) {
-	var in bool
-
 	// Trying to build unique hash, but there is small chance of collision
 	// No matter if it is request or response, all packets in the same message have same
 	m, ok := parser.m[pckt.MessageID()]
@@ -251,12 +248,32 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 	case ok:
 		parser.addPacket(m, pckt)
 		return
-	default:
-		in = pckt.Incoming
+	case pckt.Direction == DirUnknown && parser.Start != nil:
+		if in, out := parser.Start(pckt); !(in || out) {
+			// Packet can be received out of order, so give it another chance
+			if pckt.Retry < 2 && len(pckt.Payload) > 0 {
+				// Requeue not known packets
+				pckt.Retry++
+
+				select {
+				case parser.packets <- pckt:
+					return
+				default:
+				}
+			}
+
+			return
+		} else {
+			if in {
+				pckt.Direction = DirIncoming
+			} else {
+				pckt.Direction = DirOutcoming
+			}
+		}
 	}
 
 	m = new(Message)
-	m.IsRequest = in
+	m.Direction = pckt.Direction
 	parser.m[pckt.MessageID()] = m
 	m.Start = pckt.Timestamp
 	m.parser = parser
