@@ -130,7 +130,7 @@ func (m *Message) Data() []byte {
 	tmp := packetData[0]
 
 	if len(packetData) > 0 {
-		tmp, _ = copySlice(tmp, packetData[1:]...)
+		tmp, _ = copySlice(tmp, len(packetData[0]), packetData[1:]...)
 	}
 
 	return tmp

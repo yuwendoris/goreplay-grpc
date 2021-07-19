@@ -49,7 +49,11 @@ func GetPackets(request bool, start uint32, _len int, payload []byte) []*Packet 
 		ci := &gopacket.CaptureInfo{Length: len(d), CaptureLength: len(d), Timestamp: time.Now()}
 
 		packets[i-start], err = ParsePacket(d, int(layers.LinkTypeLoop), 4, ci, true)
-		packets[i-start].Direction = DirIncoming
+		if request {
+			packets[i-start].Direction = DirIncoming
+		} else {
+			packets[i-start].Direction = DirOutcoming
+		}
 		if err != nil {
 			panic(err)
 		}
@@ -59,20 +63,20 @@ func GetPackets(request bool, start uint32, _len int, payload []byte) []*Packet 
 
 func TestRequestResponseMapping(t *testing.T) {
 	packets := []*Packet{
-		{SrcPort: 60000, DstPort: 80, Ack: 1, Seq: 1, Timestamp: time.Unix(1, 0), Payload: []byte("GET / HTTP/1.1\r\n")},
-		{SrcPort: 60000, DstPort: 80, Ack: 1, Seq: 17, Timestamp: time.Unix(2, 0), Payload: []byte("Host: localhost\r\n\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 1, Seq: 1, Direction: DirIncoming, Timestamp: time.Unix(1, 0), Payload: []byte("GET / HTTP/1.1\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 1, Seq: 17, Direction: DirIncoming, Timestamp: time.Unix(2, 0), Payload: []byte("Host: localhost\r\n\r\n")},
 
 		// Seq of first response packet match Ack of first request packet
-		{SrcPort: 80, DstPort: 60000, Ack: 36, Seq: 1, Timestamp: time.Unix(3, 0), Payload: []byte("HTTP/1.1 200 OK\r\n")},
-		{SrcPort: 80, DstPort: 60000, Ack: 36, Seq: 18, Timestamp: time.Unix(4, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 36, Seq: 1, Direction: DirOutcoming, Timestamp: time.Unix(3, 0), Payload: []byte("HTTP/1.1 200 OK\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 36, Seq: 18, Direction: DirOutcoming, Timestamp: time.Unix(4, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
 
 		// Same TCP stream
-		{SrcPort: 60000, DstPort: 80, Ack: 39, Seq: 36, Timestamp: time.Unix(5, 0), Payload: []byte("GET / HTTP/1.1\r\n")},
-		{SrcPort: 60000, DstPort: 80, Ack: 39, Seq: 52, Timestamp: time.Unix(6, 0), Payload: []byte("Host: localhost\r\n\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 39, Seq: 36, Direction: DirIncoming, Timestamp: time.Unix(5, 0), Payload: []byte("GET / HTTP/1.1\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 39, Seq: 52, Direction: DirIncoming, Timestamp: time.Unix(6, 0), Payload: []byte("Host: localhost\r\n\r\n")},
 
 		// Seq of first response packet match Ack of first request packet
-		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 39, Timestamp: time.Unix(7, 0), Payload: []byte("HTTP/1.1 200 OK\r\n")},
-		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 56, Timestamp: time.Unix(8, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 39, Direction: DirOutcoming, Timestamp: time.Unix(7, 0), Payload: []byte("HTTP/1.1 200 OK\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 56, Direction: DirOutcoming, Timestamp: time.Unix(8, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
 	}
 
 	parser := NewMessageParser(1<<20, time.Second, false, nil)
@@ -80,7 +84,7 @@ func TestRequestResponseMapping(t *testing.T) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
 	parser.End = func(m *Message) bool {
-		return proto.HasFullPayload(m, m.Data())
+		return proto.HasFullPayload(m, m.PacketData()...)
 	}
 
 	for _, packet := range packets {
@@ -93,10 +97,10 @@ func TestRequestResponseMapping(t *testing.T) {
 		messages = append(messages, m)
 	}
 
-	assert.Equal(t, messages[0].Direction, DirIncoming)
-	assert.Equal(t, messages[1].Direction, DirOutcoming)
-	assert.Equal(t, messages[2].Direction, DirIncoming)
-	assert.Equal(t, messages[3].Direction, DirOutcoming)
+	assert.Equal(t, int(messages[0].Direction), int(DirIncoming))
+	assert.Equal(t, int(messages[1].Direction), int(DirOutcoming))
+	assert.Equal(t, int(messages[2].Direction), int(DirIncoming))
+	assert.Equal(t, int(messages[3].Direction), int(DirOutcoming))
 
 	assert.Equal(t, messages[0].UUID(), messages[1].UUID())
 	assert.Equal(t, messages[2].UUID(), messages[3].UUID())
@@ -110,19 +114,24 @@ func TestMessageParserWithHint(t *testing.T) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
 	parser.End = func(m *Message) bool {
-		return proto.HasFullPayload(m, m.Data())
+		return proto.HasFullPayload(m, m.PacketData()...)
 	}
-	packets := GetPackets(true, 1, 30, nil)
-	packets[4] = GetPackets(false, 4, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7"))[0]
-	packets[5] = GetPackets(false, 5, 1, []byte("\r\nMozilla\r\n9\r\nDeveloper\r"))[0]
-	packets[6] = GetPackets(false, 6, 1, []byte("\n7\r\nNetwork\r\n0\r\n\r\n"))[0]
-	packets[14] = GetPackets(true, 14, 1, []byte("POST / HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\n"))[0]
-	packets[15] = GetPackets(true, 15, 1, []byte("MozillaDeveloper"))[0]
-	packets[16] = GetPackets(true, 16, 1, []byte("Network"))[0]
-	packets[24] = GetPackets(true, 24, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n"))[0]
 
-	for i := 0; i < 30; i++ {
-		parser.PacketHandler(packets[i])
+	packets := []*Packet{
+		// Seq of first response packet match Ack of first request packet
+		{SrcPort: 80, DstPort: 60000, Ack: 1, Seq: 1, Direction: DirOutcoming, Timestamp: time.Unix(1, 0), Payload: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7\r\n")},
+		{SrcPort: 80, DstPort: 60000, Ack: 1, Seq: 18, Direction: DirOutcoming, Timestamp: time.Unix(2, 0), Payload: []byte("\r\nMozilla\r\n9\r\nDeveloper\r")},
+		{SrcPort: 80, DstPort: 60000, Ack: 1, Seq: 42, Direction: DirOutcoming, Timestamp: time.Unix(3, 0), Payload: []byte("\n7\r\nNetwork\r\n0\r\n\r\n")},
+
+		{SrcPort: 60000, DstPort: 80, Ack: 60, Seq: 1, Direction: DirIncoming, Timestamp: time.Unix(4, 0), Payload: []byte("POST / HTTP/1.1\r\nContent-Type: text/plain\r\nContent-Length: 23\r\n\r\n")},
+		{SrcPort: 60000, DstPort: 80, Ack: 60, Seq: 66, Direction: DirIncoming, Timestamp: time.Unix(5, 0), Payload: []byte("MozillaDeveloper")},
+		{SrcPort: 60000, DstPort: 80, Ack: 60, Seq: 82, Direction: DirIncoming, Timestamp: time.Unix(6, 0), Payload: []byte("Network")},
+
+		{SrcPort: 80, DstPort: 60000, Ack: 89, Seq: 1, Direction: DirOutcoming, Timestamp: time.Unix(7, 0), Payload: []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n")},
+	}
+
+	for _, p := range packets {
+		parser.PacketHandler(p)
 	}
 
 	messages := []*Message{}
@@ -150,7 +159,7 @@ func TestMessageParserWrongOrder(t *testing.T) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
 	parser.End = func(m *Message) bool {
-		return proto.HasFullPayload(m, m.Data())
+		return proto.HasFullPayload(m, m.PacketData()...)
 	}
 	packets := GetPackets(true, 1, 30, nil)
 	packets[6] = GetPackets(false, 4, 1, []byte("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n7"))[0]
@@ -229,7 +238,7 @@ func TestMessageTimeoutReached(t *testing.T) {
 	packets := GetPackets(true, 1, 2, data[:])
 	p := NewMessageParser(1<<20, 10*time.Millisecond, true, nil)
 	p.PacketHandler(packets[0])
-	time.Sleep(time.Millisecond * 50)
+	time.Sleep(time.Millisecond * 100)
 	p.PacketHandler(packets[1])
 	m := p.Read()
 	if m.Length != 63<<10 {
@@ -302,7 +311,7 @@ func BenchmarkMessageParserWithHint(b *testing.B) {
 		return false, proto.HasResponseTitle(pckt.Payload)
 	}
 	parser.End = func(m *Message) bool {
-		return proto.HasFullPayload(m, m.Data())
+		return proto.HasFullPayload(m, m.PacketData()...)
 	}
 	b.ResetTimer()
 	b.ReportMetric(float64(len(packets)), "packets/op")

@@ -10,23 +10,23 @@ import (
 	"github.com/google/gopacket"
 )
 
-func copySlice(to []byte, from ...[]byte) ([]byte, int) {
+func copySlice(to []byte, skip int, from ...[]byte) ([]byte, int) {
 	var totalLen int
 	for _, s := range from {
 		totalLen += len(s)
 	}
+	totalLen += skip
 
 	if cap(to) < totalLen {
-		diff := (cap(to) - len(to)) + totalLen
+		diff := totalLen - cap(to)
 		to = append(to, make([]byte, diff)...)
 	}
 
-	var i int
 	for _, s := range from {
-		i += copy(to[i:], s)
+		skip += copy(to[skip:], s)
 	}
 
-	return to, i
+	return to, skip
 }
 
 var stats *expvar.Map
