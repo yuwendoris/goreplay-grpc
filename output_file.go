@@ -62,17 +62,17 @@ type FileOutputConfig struct {
 // FileOutput output plugin
 type FileOutput struct {
 	sync.RWMutex
-	pathTemplate   string
-	currentName    string
-	file           *os.File
-	QueueLength    int
-	writer         io.Writer
-	requestPerFile bool
-	currentID      []byte
-	payloadType    []byte
-	closed         bool
-	currentFileSize   int
-	totalFileSize  size.Size
+	pathTemplate    string
+	currentName     string
+	file            *os.File
+	QueueLength     int
+	writer          io.Writer
+	requestPerFile  bool
+	currentID       []byte
+	payloadType     []byte
+	closed          bool
+	currentFileSize int
+	totalFileSize   size.Size
 
 	config *FileOutputConfig
 }
