@@ -16,6 +16,7 @@ import (
 
 	"github.com/buger/goreplay/capture"
 	"github.com/buger/goreplay/proto"
+	"github.com/buger/goreplay/tcp"
 )
 
 const testRawExpire = time.Millisecond * 200
@@ -43,7 +44,7 @@ func TestRAWInputIPv4(t *testing.T) {
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
 		Expire:        0,
-		Protocol:      ProtocolHTTP,
+		Protocol:      tcp.ProtocolHTTP,
 		TrackResponse: true,
 		RealIPHeader:  "X-Real-IP",
 	}
@@ -113,7 +114,7 @@ func TestRAWInputNoKeepAlive(t *testing.T) {
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
 		Expire:        testRawExpire,
-		Protocol:      ProtocolHTTP,
+		Protocol:      tcp.ProtocolHTTP,
 		TrackResponse: true,
 	}
 	input := NewRAWInput(":"+port, conf)
@@ -178,7 +179,7 @@ func TestRAWInputIPv6(t *testing.T) {
 	var respCounter, reqCounter int64
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
-		Protocol:      ProtocolHTTP,
+		Protocol:      tcp.ProtocolHTTP,
 		TrackResponse: true,
 	}
 	input := NewRAWInput(originAddr, conf)
@@ -235,7 +236,7 @@ func TestInputRAWChunkedEncoding(t *testing.T) {
 	conf := RAWInputConfig{
 		Engine:          capture.EnginePcap,
 		Expire:          time.Second,
-		Protocol:        ProtocolHTTP,
+		Protocol:        tcp.ProtocolHTTP,
 		TrackResponse:   true,
 		AllowIncomplete: true,
 	}
@@ -315,7 +316,7 @@ func BenchmarkRAWInputWithReplay(b *testing.B) {
 	conf := RAWInputConfig{
 		Engine:        capture.EnginePcap,
 		Expire:        testRawExpire,
-		Protocol:      ProtocolHTTP,
+		Protocol:      tcp.ProtocolHTTP,
 		TrackResponse: true,
 	}
 	input := NewRAWInput(originAddr, conf)

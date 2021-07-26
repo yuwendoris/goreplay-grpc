@@ -30,17 +30,16 @@ func copySlice(to []byte, skip int, from ...[]byte) ([]byte, int) {
 }
 
 var stats *expvar.Map
-var bufPoolCount *expvar.Int
-var releasedCount *expvar.Int
+var packetQueueLen, messageQueueLen *expvar.Int
 
 func init() {
-	bufPoolCount = new(expvar.Int)
-	releasedCount = new(expvar.Int)
+	packetQueueLen = new(expvar.Int)
+	messageQueueLen = new(expvar.Int)
 
 	stats = expvar.NewMap("tcp")
 	stats.Init()
-	stats.Set("buffer_pool_count", bufPoolCount)
-	stats.Set("buffer_released", releasedCount)
+	stats.Set("packet_queue", packetQueueLen)
+	stats.Set("message_queue", messageQueueLen)
 }
 
 type Dir int
@@ -76,10 +75,17 @@ type Packet struct {
 	gc      bool
 }
 
+type PcapPacket struct {
+	Data     []byte
+	LType    int
+	LTypeLen int
+	Ci       *gopacket.CaptureInfo
+}
+
 // ParsePacket parse raw packets
-func ParsePacket(data []byte, lType, lTypeLen int, cp *gopacket.CaptureInfo, allowEmpty bool) (pckt *Packet, err error) {
+func ParsePacket(data []byte, lType, lTypeLen int, ci *gopacket.CaptureInfo, allowEmpty bool) (pckt *Packet, err error) {
 	pckt = new(Packet)
-	if err := pckt.parse(data, lType, lTypeLen, cp, allowEmpty); err != nil {
+	if err := pckt.parse(data, lType, lTypeLen, ci, allowEmpty); err != nil {
 		return nil, err
 	}
 

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buger/goreplay/proto"
 	"github.com/buger/goreplay/size"
 	"github.com/buger/goreplay/tcp"
 
@@ -59,9 +60,13 @@ type Listener struct {
 	loopIndex  int
 	Reading    chan bool // this channel is closed when the listener has started reading packets
 	PcapOptions
-	Engine        EngineType
-	ports         []uint16 // src or/and dst ports
-	trackResponse bool
+	Engine          EngineType
+	ports           []uint16 // src or/and dst ports
+	trackResponse   bool
+	expiry          time.Duration
+	allowIncomplete bool
+	messages        chan *tcp.Message
+	protocol        tcp.TCPProtocol
 
 	host string // pcap file name or interface (name, hardware addr, index or ip address)
 
@@ -121,7 +126,7 @@ func (eng *EngineType) String() (e string) {
 // NewListener creates and initialize a new Listener. if transport or/and engine are invalid/unsupported
 // is "tcp" and "pcap", are assumed. l.Engine and l.Transport can help to get the values used.
 // if there is an error it will be associated with getting network interfaces
-func NewListener(host string, ports []uint16, transport string, engine EngineType, trackResponse bool) (l *Listener, err error) {
+func NewListener(host string, ports []uint16, transport string, engine EngineType, protocol tcp.TCPProtocol, trackResponse bool, expiry time.Duration, allowIncomplete bool) (l *Listener, err error) {
 	l = &Listener{}
 
 	l.host = host
@@ -139,6 +144,11 @@ func NewListener(host string, ports []uint16, transport string, engine EngineTyp
 	l.closeDone = make(chan struct{})
 	l.quit = make(chan struct{})
 	l.Reading = make(chan bool)
+	l.expiry = expiry
+	l.allowIncomplete = allowIncomplete
+	l.protocol = protocol
+	l.messages = make(chan *tcp.Message, 10000)
+
 	switch engine {
 	default:
 		l.Engine = EnginePcap
@@ -171,8 +181,8 @@ func (l *Listener) SetPcapOptions(opts PcapOptions) {
 // Listen listens for packets from the handles, and call handler on every packet received
 // until the context done signal is sent or there is unrecoverable error on all handles.
 // this function must be called after activating pcap handles
-func (l *Listener) Listen(ctx context.Context, handler PacketHandler) (err error) {
-	l.read(handler)
+func (l *Listener) Listen(ctx context.Context) (err error) {
+	l.read()
 	done := ctx.Done()
 	select {
 	case <-done:
@@ -185,11 +195,11 @@ func (l *Listener) Listen(ctx context.Context, handler PacketHandler) (err error
 }
 
 // ListenBackground is like listen but can run concurrently and signal error through channel
-func (l *Listener) ListenBackground(ctx context.Context, handler PacketHandler) chan error {
+func (l *Listener) ListenBackground(ctx context.Context) chan error {
 	err := make(chan error, 1)
 	go func() {
 		defer close(err)
-		if e := l.Listen(ctx, handler); err != nil {
+		if e := l.Listen(ctx); err != nil {
 			err <- e
 		}
 	}()
@@ -332,11 +342,34 @@ func (l *Listener) SocketHandle(ifi pcap.Interface) (handle Socket, err error) {
 	return
 }
 
-func (l *Listener) read(handler PacketHandler) {
+func http1StartHint(pckt *tcp.Packet) (isRequest, isResponse bool) {
+	if proto.HasRequestTitle(pckt.Payload) {
+		return true, false
+	}
+
+	if proto.HasResponseTitle(pckt.Payload) {
+		return false, true
+	}
+
+	// No request or response detected
+	return false, false
+}
+
+func http1EndHint(m *tcp.Message) bool {
+	if m.MissingChunk() {
+		return false
+	}
+
+	return proto.HasFullPayload(m, m.PacketData()...)
+}
+
+func (l *Listener) read() {
 	l.Lock()
 	defer l.Unlock()
 	for key, handle := range l.Handles {
 		go func(key string, hndl packetHandle) {
+			runtime.LockOSThread()
+
 			defer l.closeHandles(key)
 			linkSize := 14
 			linkType := int(layers.LinkTypeEthernet)
@@ -349,6 +382,13 @@ func (l *Listener) read(handler PacketHandler) {
 					}
 					return // can't find the linktype size
 				}
+			}
+
+			messageParser := tcp.NewMessageParser(l.messages, l.ports, hndl.ips, l.expiry, l.allowIncomplete)
+
+			if l.protocol == tcp.ProtocolHTTP {
+				messageParser.Start = http1StartHint
+				messageParser.End = http1EndHint
 			}
 
 			timer := time.NewTicker(1 * time.Second)
@@ -371,23 +411,12 @@ func (l *Listener) read(handler PacketHandler) {
 							ci.Timestamp = time.Now()
 						}
 
-						pckt, err := tcp.ParsePacket(data, linkType, linkSize, &ci, false)
-
-						if err == nil {
-							for _, p := range l.ports {
-								if pckt.DstPort == p {
-									for _, ip := range hndl.ips {
-										if pckt.DstIP.Equal(ip) {
-											pckt.Direction = tcp.DirIncoming
-											break
-										}
-									}
-									break
-								}
-							}
-
-							handler(pckt)
-						}
+						messageParser.PacketHandler(&tcp.PcapPacket{
+							Data:     data,
+							LType:    linkType,
+							LTypeLen: linkSize,
+							Ci:       &ci,
+						})
 						continue
 					}
 					if enext, ok := err.(pcap.NextError); ok && enext == pcap.NextErrorTimeoutExpired {
@@ -411,6 +440,10 @@ func (l *Listener) read(handler PacketHandler) {
 		}(key, handle)
 	}
 	close(l.Reading)
+}
+
+func (l *Listener) Messages() chan *tcp.Message {
+	return l.messages
 }
 
 func (l *Listener) closeHandles(key string) {
