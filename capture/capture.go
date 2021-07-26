@@ -3,6 +3,7 @@ package capture
 import (
 	"context"
 	"errors"
+	"expvar"
 	"fmt"
 	"io"
 	"log"
@@ -22,8 +23,19 @@ import (
 	"github.com/google/gopacket/pcap"
 )
 
+var stats *expvar.Map
+
+func init() {
+	stats = expvar.NewMap("raw")
+	stats.Init()
+}
+
 // PacketHandler is a function that is used to handle packets
 type PacketHandler func(*tcp.Packet)
+
+type PcapStatProvider interface {
+	Stats() (*pcap.Stats, error)
+}
 
 // PcapOptions options that can be set on a pcap capture handle,
 // these options take effect on inactive pcap handles
@@ -339,10 +351,19 @@ func (l *Listener) read(handler PacketHandler) {
 				}
 			}
 
+			timer := time.NewTicker(1 * time.Second)
+
 			for {
 				select {
 				case <-l.quit:
 					return
+				case <-timer.C:
+					if h, ok := hndl.handler.(PcapStatProvider); ok {
+						s, _ := h.Stats()
+						stats.Add("packets_received", int64(s.PacketsReceived))
+						stats.Add("packets_dropped", int64(s.PacketsDropped))
+						stats.Add("packets_if_dropped", int64(s.PacketsIfDropped))
+					}
 				default:
 					data, ci, err := hndl.handler.ReadPacketData()
 					if err == nil {
