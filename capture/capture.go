@@ -571,10 +571,6 @@ func (l *Listener) setInterfaces() (err error) {
 	}
 
 	for _, pi := range pifis {
-		if len(pi.Addresses) == 0 {
-			continue
-		}
-
 		var ni net.Interface
 		for _, i := range ifis {
 			addrs, _ := i.Addrs()
@@ -586,13 +582,15 @@ func (l *Listener) setInterfaces() (err error) {
 					}
 				}
 			}
+
+			if len(addrs) == 0 && i.Name == pi.Name {
+				ni = i
+				break
+			}
 		}
 
 		if ni.Flags&net.FlagLoopback != 0 {
 			l.loopIndex = ni.Index
-		}
-		if ni.Flags&net.FlagUp == 0 {
-			continue
 		}
 
 		if isDevice(l.host, pi) {
