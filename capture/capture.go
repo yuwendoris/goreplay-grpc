@@ -218,7 +218,7 @@ func (l *Listener) Filter(ifi pcap.Interface) (filter string) {
 
 	filter = portsFilter(l.Transport, "dst", l.ports)
 
-	if len(hosts) != 0 {
+	if len(hosts) != 0 && !l.Promiscuous {
 		filter = fmt.Sprintf("((%s) and (%s))", filter, hostsFilter("dst", hosts))
 	} else {
 		filter = fmt.Sprintf("(%s)", filter)
@@ -227,7 +227,7 @@ func (l *Listener) Filter(ifi pcap.Interface) (filter string) {
 	if l.trackResponse {
 		responseFilter := portsFilter(l.Transport, "src", l.ports)
 
-		if len(hosts) != 0 {
+		if len(hosts) != 0 && !l.Promiscuous {
 			responseFilter = fmt.Sprintf("((%s) and (%s))", responseFilter, hostsFilter("src", hosts))
 		} else {
 			responseFilter = fmt.Sprintf("(%s)", responseFilter)
@@ -235,8 +235,6 @@ func (l *Listener) Filter(ifi pcap.Interface) (filter string) {
 
 		filter = fmt.Sprintf("%s or %s", filter, responseFilter)
 	}
-
-	// filter = fmt.Sprintf("((((ip[2:2] - ((ip[0]&0xf)<<2)) - ((tcp[12]&0xf0)>>2)) != 0)) and (%s)", filter)
 
 	return
 }
