@@ -82,7 +82,6 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 	o := new(FileOutput)
 	o.pathTemplate = pathTemplate
 	o.config = config
-	o.updateName()
 
 	if strings.Contains(pathTemplate, "%r") {
 		o.requestPerFile = true
@@ -98,7 +97,6 @@ func NewFileOutput(pathTemplate string, config *FileOutputConfig) *FileOutput {
 			if o.IsClosed() {
 				break
 			}
-			o.updateName()
 			o.flush()
 		}
 	}()
