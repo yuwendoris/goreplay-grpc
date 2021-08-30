@@ -217,7 +217,9 @@ func TestMessageTimeoutReached(t *testing.T) {
 	packets := GetPackets(true, 1, 2, data[:])
 	p := NewMessageParser(nil, nil, nil, 10*time.Millisecond, true)
 	p.processPacket(packets[0])
-	time.Sleep(time.Second * 2)
+
+	time.Sleep(time.Millisecond * 200)
+
 	p.processPacket(packets[1])
 	m := p.Read()
 	if m.Length != 63<<10 {

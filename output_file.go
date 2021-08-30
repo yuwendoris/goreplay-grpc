@@ -193,7 +193,6 @@ func (o *FileOutput) filename() string {
 
 				if nextChunk {
 					fileIndex++
-					o.currentFileSize = 0
 				}
 			}
 
@@ -307,6 +306,8 @@ func (o *FileOutput) closeLocked() error {
 	}
 
 	o.closed = true
+	o.currentFileSize = 0
+
 	return nil
 }
 
