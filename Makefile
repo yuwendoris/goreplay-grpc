@@ -4,14 +4,13 @@ PORT = 8000
 FADDR = :8000
 CONTAINER=gor
 PREFIX=
-RUN = docker run -v `pwd`:$(SOURCE_PATH) -e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) -e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) -p 0.0.0.0:$(PORT):$(PORT) -t -i $(CONTAINER)
+RUN = docker run --rm -v `pwd`:$(SOURCE_PATH) -e AWS_ACCESS_KEY_ID=$(AWS_ACCESS_KEY_ID) -e AWS_SECRET_ACCESS_KEY=$(AWS_SECRET_ACCESS_KEY) -p 0.0.0.0:$(PORT):$(PORT) -t -i $(CONTAINER)
 BENCHMARK = BenchmarkRAWInput
 TEST = TestRawListenerBench
 BIN_NAME = gor
 VERSION = DEV-$(shell date +%s)
 LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)$(PREFIX) -extldflags \"-static\" -X main.DEMO=$(DEMO)"
 MAC_LDFLAGS = -ldflags "-X main.VERSION=$(VERSION)$(PREFIX) -X main.DEMO=$(DEMO)"
-FADDR = ":8000"
 
 FPMCOMMON= \
     --name goreplay \
@@ -23,6 +22,8 @@ FPMCOMMON= \
     -s dir \
     -C /tmp/gor-build \
 
+.PHONY: vendor
+
 release: release-x64 release-x86 release-mac release-windows
 
 vendor:
@@ -31,7 +32,7 @@ vendor:
 release-bin: vendor
 	docker run --rm -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -mod=vendor -o $(BIN_NAME) -tags netgo $(LDFLAGS)
 
-release-bin-x64: vendor
+release-bin-x86: vendor
 	docker run --rm -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i $(CONTAINER) go build -mod=vendor -o $(BIN_NAME) -tags netgo $(LDFLAGS)
 
 release-bin-mac: vendor
@@ -51,7 +52,7 @@ release-x64: release-bin
 	fpm $(FPMCOMMON) -a amd64 -t rpm ./=/usr/local/bin
 	rm -rf /tmp/gor-build
 
-release-x86: release-bin-x64
+release-x86: release-bin-x86
 	tar -czf gor_$(VERSION)$(PREFIX)_x86.tar.gz $(BIN_NAME)
 	rm $(BIN_NAME)
 
