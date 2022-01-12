@@ -24,16 +24,13 @@ FPMCOMMON= \
 
 .PHONY: vendor
 
-release: release-x64 release-x86 release-mac release-windows
+release: release-x64 release-mac release-windows
 
 vendor:
 	go mod vendor
 
 release-bin: vendor
 	docker run --rm -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=amd64  -i $(CONTAINER) go build -mod=vendor -o $(BIN_NAME) -tags netgo $(LDFLAGS)
-
-release-bin-x86: vendor
-	docker run --rm -v `pwd`:$(SOURCE_PATH) -t --env GOOS=linux --env GOARCH=386 -i $(CONTAINER) go build -mod=vendor -o $(BIN_NAME) -tags netgo $(LDFLAGS)
 
 release-bin-mac: vendor
 	GOOS=darwin go build -mod=vendor -o $(BIN_NAME) $(MAC_LDFLAGS)
@@ -48,8 +45,8 @@ release-x64: release-bin
 	cd /tmp/gor-build
 	rm -f goreplay_$(VERSION)_amd64.deb
 	rm -f goreplay-$(VERSION)-1.x86_64.rpm
-	fpm $(FPMCOMMON) -a amd64 -t deb ./=/usr/local/bin
-	fpm $(FPMCOMMON) -a amd64 -t rpm ./=/usr/local/bin
+	nfpm pkg --packager deb --target ./
+	nfpm pkg --packager rpm --target ./
 	rm -rf /tmp/gor-build
 
 release-x86: release-bin-x86
@@ -70,6 +67,13 @@ release-windows: release-bin-windows
 	zip gor-$(VERSION)$(PREFIX)_windows.zip ./gor.exe
 	rm -rf ./gor.exe
 
+clean:
+	rm -rf *.pkg
+	rm -rf *.zip
+	rm -rf *.gz
+	rm -rf *.deb
+	rm -rf *.rpm
+
 build:
 	go build -mod=vendor -o $(BIN_NAME) $(LDFLAGS)
 
@@ -77,7 +81,7 @@ install:
 	go install $(MAC_LDFLAGS)
 
 build-env:
-	docker build -t $(CONTAINER) -f Dockerfile.dev .
+	docker buildx build --platform linux/amd64 -t $(CONTAINER) -f Dockerfile.dev .
 
 profile:
 	go build && ./$(BIN_NAME) --output-http="http://localhost:9000" --input-dummy 0 --input-raw :9000 --input-http :9000 --memprofile=./mem.out --cpuprofile=./cpu.out --stats --output-http-stats --output-http-timeout 100ms
