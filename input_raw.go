@@ -51,7 +51,18 @@ func NewRAWInput(address string, config RAWInputConfig) (i *RAWInput) {
 
 	host, _ports, err := net.SplitHostPort(address)
 	if err != nil {
-		log.Fatalf("input-raw: error while parsing address: %s", err)
+		// If we are reading pcap file, no port needed
+		if strings.HasSuffix(address, "pcap") {
+			host = address
+			_ports = "0"
+			err = nil
+		} else {
+			log.Fatalf("input-raw: error while parsing address: %s", err)
+		}
+	}
+
+	if strings.HasSuffix(host, "pcap") {
+		i.RAWInputConfig.Engine = capture.EnginePcapFile
 	}
 
 	var ports []uint16
