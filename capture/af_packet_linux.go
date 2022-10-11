@@ -93,7 +93,7 @@ func (h *afpacketHandle) SocketStats() (as afpacket.SocketStats, asv afpacket.So
 // afpacketComputeSize computes the block_size and the num_blocks in such a way that the
 // allocated mmap buffer is close to but smaller than target_size_mb.
 // The restriction is that the block_size must be divisible by both the
-// frame size and page size.
+// http2_protocol size and page size.
 func afpacketComputeSize(targetSizeMb int, snaplen int, pageSize int) (
 	frameSize int, blockSize int, numBlocks int, err error) {
 

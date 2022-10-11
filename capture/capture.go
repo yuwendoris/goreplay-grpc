@@ -5,6 +5,7 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
+	"github.com/buger/goreplay/http2_protocol"
 	"io"
 	"log"
 	"net"
@@ -353,23 +354,51 @@ func http1StartHint(pckt *tcp.Packet) (isRequest, isResponse bool) {
 	return false, false
 }
 
+// todo
+func http2StartHint(pckt *tcp.Packet) (isRequest, isResponse bool) {
+	if http2_protocol.IsResponse(pckt.PayloadFrame[0]) {
+		return false, true
+	}
+
+	if http2_protocol.IsRequest(pckt.PayloadFrame[0]) {
+		return true, false
+	}
+
+	return false, false
+}
+
 func http1EndHint(m *tcp.Message) bool {
 	if m.MissingChunk() {
 		return false
 	}
-	
+
 	req, res := http1StartHint(m.Packets()[0])
+
 	return proto.HasFullPayload(m, m.PacketData()...) && (req || res)
+}
+
+func http2EndHint(m *tcp.Message) bool {
+	// message-packet-http2_protocol
+	req, res := http2StartHint(m.Packets()[0])
+
+	lastPayload := m.Packets()[len(m.PacketData())-1]
+	lastFrame := lastPayload.PayloadFrame[len(lastPayload.PayloadFrame)-1]
+
+	return http2_protocol.HasFullPayload(lastFrame) && (req || res)
 }
 
 func (l *Listener) read() {
 	l.Lock()
 	defer l.Unlock()
+
+	streamParser := tcp.NewStreamParser()
+	connParser := tcp.NewConnParser()
 	for key, handle := range l.Handles {
 		go func(key string, hndl packetHandle) {
 			runtime.LockOSThread()
 
 			defer l.closeHandles(key)
+
 			linkSize := 14
 			linkType := int(layers.LinkTypeEthernet)
 			if _, ok := hndl.handler.(*pcap.Handle); ok {
@@ -383,11 +412,19 @@ func (l *Listener) read() {
 				}
 			}
 
-			messageParser := tcp.NewMessageParser(l.messages, l.ports, hndl.ips, l.expiry, l.allowIncomplete)
+			messageParser := tcp.NewMessageParser(l.messages, l.ports, hndl.ips, l.expiry, l.allowIncomplete, l.protocol)
 
 			if l.protocol == tcp.ProtocolHTTP {
 				messageParser.Start = http1StartHint
 				messageParser.End = http1EndHint
+			}
+
+			if l.protocol == tcp.ProtocolHTTP2 {
+				messageParser.Start = http2StartHint
+				messageParser.End = http2EndHint
+
+				messageParser.StreamParser = streamParser
+				messageParser.StreamParser.ConnParser = connParser
 			}
 
 			timer := time.NewTicker(1 * time.Second)
@@ -407,6 +444,9 @@ func (l *Listener) read() {
 					}
 				default:
 					data, ci, err := hndl.handler.ReadPacketData()
+					if data != nil {
+						fmt.Println("data", data)
+					}
 					if err == nil {
 						if l.TimestampType == "go" {
 							ci.Timestamp = time.Now()

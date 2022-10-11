@@ -3,7 +3,12 @@ package tcp
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"github.com/buger/goreplay/http2_protocol"
+	"github.com/buger/goreplay/testg"
+	pb "github.com/golang/protobuf/proto"
+	"golang.org/x/net/http2"
 	"net"
 	"reflect"
 	"sort"
@@ -22,6 +27,8 @@ const (
 	ProtocolHTTP TCPProtocol = iota
 	// ProtocolBinary ...
 	ProtocolBinary
+	// ProtocolHTTP2 ...
+	ProtocolHTTP2
 )
 
 // Set is here so that TCPProtocol can implement flag.Var
@@ -31,6 +38,8 @@ func (protocol *TCPProtocol) Set(v string) error {
 		*protocol = ProtocolHTTP
 	case "binary":
 		*protocol = ProtocolBinary
+	case "http2":
+		*protocol = ProtocolHTTP2
 	default:
 		return fmt.Errorf("unsupported protocol %s", v)
 	}
@@ -43,6 +52,8 @@ func (protocol *TCPProtocol) String() string {
 		return "binary"
 	case ProtocolHTTP:
 		return "http"
+	case ProtocolHTTP2:
+		return "http2"
 	default:
 		return ""
 	}
@@ -66,10 +77,15 @@ type Stats struct {
 type Message struct {
 	packets          []*Packet
 	parser           *MessageParser
+	Stream           *Stream
 	feedback         interface{}
 	Idx              uint16
+	StreamId         uint64 // ip+port+streamId
+	ConnId           uint64 // ip+port
 	continueAdjusted bool
+
 	Stats
+	TransferCompleteChan chan bool
 }
 
 // UUID returns the UUID of a TCP request and its response.
@@ -162,6 +178,93 @@ func (m *Message) PacketData() [][]byte {
 	return tmp
 }
 
+// get complete http2_protocol message
+func (m *Message) PacketDataHttp2() []byte {
+	req := new(http2_protocol.Request)
+	resp := new(http2_protocol.Response)
+
+	fmt.Println("m.Stream  1111", m.Stream, m.packets)
+	for _, p := range m.packets {
+		for _, frame := range p.PayloadFrame {
+			switch targetFrame := frame.(type) {
+			case *http2.MetaHeadersFrame:
+				// 要进行field插入
+				for _, field := range targetFrame.Fields {
+					m.Stream.Conn.Enc.WriteField(hpack.HeaderField{Name: field.Name, Value: field.Value})
+
+					if field.Name == ":scheme" {
+						req.Header.Scheme = field.Value
+					}
+
+					if field.Name == ":path" {
+						req.Header.Method = field.Value
+
+						// get input message through request method
+						targetPackage, service, method := testg.AnalysisPath(field.Value)
+						inputType, outputType := testg.GetRpcInAndOutType(targetPackage, service, method)
+						inputTypeName := targetPackage + "." + inputType.GetName()
+						pi := testg.GetMessage(inputTypeName)
+						inputMessage := reflect.New(pi.Elem()).Interface().(pb.Message)
+						m.Stream.GrpcInput = inputMessage
+
+						outputTypeName := targetPackage + "." + outputType.GetName()
+						po := testg.GetMessage(outputTypeName)
+						outputMessage := reflect.New(po.Elem()).Interface().(pb.Message)
+						m.Stream.GrpcOutput = outputMessage
+					}
+				}
+			case *http2.DataFrame:
+				if targetFrame.Length == 0 {
+					continue
+				}
+				// judge direction of message
+				if m.Stats.Direction == DirIncoming {
+					if targetFrame.Data() != nil {
+						inputMessage := m.Stream.GrpcInput
+						pb.Unmarshal(targetFrame.Data()[5:], inputMessage) // todo grpc compression handle
+
+						req.Data = append(req.Data, inputMessage)
+					}
+				} else if m.Stats.Direction == DirOutcoming {
+					fmt.Println("m.Stream", m.Stream)
+					outputMessage := m.Stream.GrpcOutput
+					fmt.Println("DirOutcoming", outputMessage, targetFrame.Data()[5:])
+					pb.Unmarshal(targetFrame.Data()[5:], outputMessage)
+
+					resp.Data.Data = append(resp.Data.Data, outputMessage)
+				}
+			}
+		}
+	}
+
+	if req != nil {
+		bytes, err := json.Marshal(req)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		return bytes
+	}
+
+	if resp != nil {
+		bytes, err := json.Marshal(resp)
+		delete(m.parser.StreamParser.S, m.StreamId)
+
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		return bytes
+	}
+
+	return []byte{}
+}
+
+func (m *Message) DataHttp2() []byte {
+	return m.PacketDataHttp2()
+}
+
 // Data returns data in this message
 func (m *Message) Data() []byte {
 	packetData := m.PacketData()
@@ -223,10 +326,12 @@ type MessageParser struct {
 	close          chan struct{} // to signal that we are able to close
 	ports          []uint16
 	ips            []net.IP
+	protocol       TCPProtocol
+	StreamParser   *StreamParser
 }
 
 // NewMessageParser returns a new instance of message parser
-func NewMessageParser(messages chan *Message, ports []uint16, ips []net.IP, messageExpire time.Duration, allowIncompete bool) (parser *MessageParser) {
+func NewMessageParser(messages chan *Message, ports []uint16, ips []net.IP, messageExpire time.Duration, allowIncompete bool, protocol TCPProtocol) (parser *MessageParser) {
 	parser = new(MessageParser)
 
 	parser.messageExpire = messageExpire
@@ -235,6 +340,7 @@ func NewMessageParser(messages chan *Message, ports []uint16, ips []net.IP, mess
 	}
 
 	parser.allowIncompete = allowIncompete
+	parser.protocol = protocol
 
 	parser.packets = make(chan *PcapPacket, 10000)
 
@@ -277,13 +383,14 @@ func (parser *MessageParser) wait(index int) {
 		case pckt := <-parser.packets:
 			parser.processPacket(parser.parsePacket(pckt))
 		case now = <-parser.ticker.C:
+			fmt.Println(now)
 			parser.timer(now, index)
 		case <-parser.close:
 			parser.ticker.Stop()
 			// parser.Close should wait for this function to return
 			parser.close <- struct{}{}
 			return
-			// default:
+		default:
 		}
 	}
 }
@@ -309,40 +416,34 @@ func (parser *MessageParser) parsePacket(pcapPkt *PcapPacket) *Packet {
 		}
 	}
 
-	return pckt
-}
+	if parser.protocol == ProtocolHTTP2 && pckt.FIN && pckt.ACK {
+		connId := pckt.ConnId()
+		delete(parser.StreamParser.ConnParser.C, connId)
 
-func (parser *MessageParser) processPacket(pckt *Packet) {
-	if pckt == nil {
-		return
-	}
-
-	// Trying to build unique hash, but there is small chance of collision
-	// No matter if it is request or response, all packets in the same message have same
-	mID := pckt.MessageID()
-	mIDX := pckt.SrcPort % 10
-
-	parser.mL[mIDX].Lock()
-	m, ok := parser.m[mIDX][mID]
-	if !ok {
-		parser.mL[mIDX].Unlock()
-
-		mIDX = pckt.DstPort % 10
-		parser.mL[mIDX].Lock()
-		m, ok = parser.m[mIDX][mID]
-
-		if !ok {
-			parser.mL[mIDX].Unlock()
+		gg := parser.StreamParser.ConnParser.C[pckt.streamID].ConnStream
+		for _, kk := range gg {
+			delete(parser.StreamParser.S, kk.Idx)
 		}
 	}
 
-	switch {
-	case ok:
-		parser.addPacket(m, pckt)
+	return pckt
+}
 
-		parser.mL[mIDX].Unlock()
-		return
-	case pckt.Direction == DirUnknown && parser.Start != nil:
+func splitPayloadBytes(payload []byte, frameByteList [][]byte) [][]byte {
+	if len(payload) == 0 {
+		return frameByteList
+	}
+
+	length := (uint32(payload[0])<<16 | uint32(payload[1])<<8 | uint32(payload[2]))
+
+	frameByteList = append(frameByteList, payload[0:length+9])
+
+	return splitPayloadBytes(payload[length+9:], frameByteList)
+}
+
+func (parser *MessageParser) getMIDX(pckt *Packet) uint16 {
+	mIDX := uint16(0)
+	if pckt.Direction == DirUnknown {
 		if in, out := parser.Start(pckt); in || out {
 			if in {
 				pckt.Direction = DirIncoming
@@ -358,16 +459,85 @@ func (parser *MessageParser) processPacket(pckt *Packet) {
 		mIDX = pckt.DstPort % 10
 	}
 
+	return mIDX
+}
+
+func (parser *MessageParser) processPacket(pckt *Packet) {
+	if pckt == nil {
+		return
+	}
+
+	mID := uint64(0)
+	connId := uint64(0)
+	mIDX := uint16(0)
+	streamId := uint32(0)
+	mStreamId := uint64(0)
+	if parser.protocol == ProtocolHTTP2 {
+		// magic Check
+		if http2_protocol.CheckMagic(pckt.Payload) {
+
+			if parser.StreamParser.ConnParser.C[pckt.ConnId()] != nil {
+				parser.StreamParser.ConnParser.C[pckt.ConnId()].SetNewCoder()
+				delete(parser.StreamParser.ConnParser.C, parser.m[mIDX][pckt.messageID].ConnId)
+			}
+
+			return
+		}
+
+		frameList := splitPayloadBytes(pckt.Payload, [][]byte{})
+
+		for _, frameByte := range frameList {
+			payloadFrame := http2_protocol.TransferFrame(frameByte)
+			pckt.PayloadFrame = append(pckt.PayloadFrame, payloadFrame)
+			frameType := http2_protocol.GetType(payloadFrame)
+			if frameType != "DATA" &&
+				frameType != "HEADERS" &&
+				frameType != "CONTINUATION" {
+				return
+			}
+
+			streamId := http2_protocol.GetSteamId(payloadFrame)
+			mID = pckt.MessageIDHttp2(streamId)
+			connId = pckt.ConnId()
+		}
+	}
+
+	// Trying to build unique hash, but there is small chance of collision
+	// No matter if it is request or response, all packets in the same message have same
+	if parser.protocol == ProtocolHTTP {
+		mID = pckt.MessageID()
+	}
+	mIDX = parser.getMIDX(pckt)
+	if parser.protocol == ProtocolHTTP2 {
+		mStreamId = pckt.StreamId(streamId)
+	}
+	parser.mL[mIDX].Lock()
+	m, ok := parser.m[mIDX][mID]
+	if !ok {
+		parser.mL[mIDX].Unlock()
+	}
+
+	switch {
+	case ok:
+		parser.addPacket(m, pckt)
+
+		parser.mL[mIDX].Unlock()
+		return
+	}
+
 	parser.mL[mIDX].Lock()
 
 	m = new(Message)
 	m.Direction = pckt.Direction
 	m.SrcAddr = pckt.SrcIP.String()
 	m.DstAddr = pckt.DstIP.String()
+	m.TransferCompleteChan = make(chan bool)
 
 	parser.m[mIDX][mID] = m
 
 	m.Idx = mIDX
+	m.ConnId = connId
+	m.StreamId = mStreamId
 	m.Start = pckt.Timestamp
 	m.parser = parser
 	parser.addPacket(m, pckt)
@@ -424,12 +594,30 @@ func (parser *MessageParser) Read() *Message {
 	return m
 }
 
+// streamHandler处理
 func (parser *MessageParser) Emit(m *Message) {
 	stats.Add("message_count", 1)
 
-	delete(parser.m[m.Idx], m.packets[0].MessageID())
+	if parser.protocol == ProtocolHTTP2 {
+		// todo stream handler
+		parser.StreamParser.MessageHandler(m)
+		delete(parser.m[m.Idx], m.packets[0].MessageIDHttp2(http2_protocol.GetSteamId(m.packets[0].PayloadFrame[0])))
+	} else {
+		delete(parser.m[m.Idx], m.packets[0].MessageID())
+	}
 
-	parser.messages <- m
+	go parser.waitEmit(m)
+}
+
+func (parser *MessageParser) waitEmit(m *Message) {
+	for {
+		select {
+
+		case <-m.TransferCompleteChan:
+			fmt.Println("parser.messages", m, parser.messages, len(parser.messages))
+			parser.messages <- m
+		}
+	}
 }
 
 func GetUnexportedField(field reflect.Value) interface{} {
@@ -443,7 +631,11 @@ func (parser *MessageParser) timer(now time.Time, index int) {
 	parser.mL[index].Lock()
 
 	packetQueueLen.Set(int64(len(parser.packets)))
-	messageQueueLen.Set(int64(len(parser.m[index])))
+	if parser.protocol == ProtocolHTTP2 {
+		messageQueueLen.Set(int64(len(parser.m[index])))
+		messageQueueLen.Set(int64(len(parser.StreamParser.S)))
+		messageQueueLen.Set(int64(len(parser.StreamParser.ConnParser.C)))
+	}
 
 	for id, m := range parser.m[index] {
 		if now.Sub(m.End) > parser.messageExpire {
@@ -463,6 +655,15 @@ func (parser *MessageParser) timer(now time.Time, index int) {
 
 func (parser *MessageParser) Close() error {
 	parser.close <- struct{}{}
+	if parser.protocol == ProtocolHTTP2 {
+		parser.StreamParser.CloseStream <- struct{}{}
+		parser.StreamParser.ConnParser.ConnClose <- struct{}{}
+	}
 	<-parser.close // wait for timer to be closed!
+	if parser.protocol == ProtocolHTTP2 {
+		<-parser.StreamParser.CloseStream
+		<-parser.StreamParser.ConnParser.ConnClose
+	}
+
 	return nil
 }

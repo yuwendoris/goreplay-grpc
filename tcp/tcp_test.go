@@ -79,7 +79,7 @@ func TestRequestResponseMapping(t *testing.T) {
 		{SrcPort: 80, DstPort: 60000, Ack: 71, Seq: 56, Direction: DirOutcoming, Timestamp: time.Unix(8, 0), Payload: []byte("Content-Length: 0\r\n\r\n")},
 	}
 
-	parser := NewMessageParser(nil, nil, nil, time.Second, false)
+	parser := NewMessageParser(nil, nil, nil, time.Second, false, ProtocolHTTP)
 	parser.Start = func(pckt *Packet) (bool, bool) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
@@ -109,7 +109,7 @@ func TestRequestResponseMapping(t *testing.T) {
 }
 
 func TestMessageParserWithHint(t *testing.T) {
-	parser := NewMessageParser(nil, nil, nil, time.Second, false)
+	parser := NewMessageParser(nil, nil, nil, time.Second, false, ProtocolHTTP)
 	parser.Start = func(pckt *Packet) (bool, bool) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
@@ -154,7 +154,7 @@ func TestMessageParserWithHint(t *testing.T) {
 }
 
 func TestMessageParserWrongOrder(t *testing.T) {
-	parser := NewMessageParser(nil, nil, nil, time.Second, false)
+	parser := NewMessageParser(nil, nil, nil, time.Second, false, ProtocolHTTP)
 	parser.Start = func(pckt *Packet) (bool, bool) {
 		return proto.HasRequestTitle(pckt.Payload), proto.HasResponseTitle(pckt.Payload)
 	}
@@ -201,7 +201,7 @@ func TestMessageParserWithoutHint(t *testing.T) {
 	var data [63 << 10]byte
 	packets := GetPackets(true, 1, 10, data[:])
 
-	p := NewMessageParser(nil, nil, nil, time.Second, false)
+	p := NewMessageParser(nil, nil, nil, time.Second, false, ProtocolHTTP)
 	for _, v := range packets {
 		p.processPacket(v)
 	}
@@ -216,7 +216,7 @@ func TestMessageTimeoutReached(t *testing.T) {
 	const size = 63 << 11
 	var data [size >> 1]byte
 	packets := GetPackets(true, 1, 2, data[:])
-	p := NewMessageParser(nil, nil, nil, 10*time.Millisecond, true)
+	p := NewMessageParser(nil, nil, nil, 10*time.Millisecond, true, ProtocolHTTP)
 	p.processPacket(packets[0])
 
 	time.Sleep(time.Second * 2)
@@ -235,7 +235,7 @@ func BenchmarkMessageUUID(b *testing.B) {
 	packets := GetPackets(true, 1, 5, nil)
 
 	var uuid []byte
-	parser := NewMessageParser(nil, nil, nil, 10*time.Millisecond, true)
+	parser := NewMessageParser(nil, nil, nil, 10*time.Millisecond, true, ProtocolHTTP)
 	for _, p := range packets {
 		parser.processPacket(p)
 	}
@@ -264,7 +264,7 @@ func BenchmarkPacketParseAndSort(b *testing.B) {
 func BenchmarkMessageParserWithoutHint(b *testing.B) {
 	var chunk = []byte("111111111111111111111111111111")
 	packets := GetPackets(true, 1, 1000, chunk)
-	p := NewMessageParser(nil, nil, nil, 2*time.Second, false)
+	p := NewMessageParser(nil, nil, nil, 2*time.Second, false, ProtocolHTTP)
 	b.ResetTimer()
 	b.ReportMetric(float64(1000), "packets/op")
 	for i := 0; i < b.N; i++ {
@@ -288,7 +288,7 @@ func BenchmarkMessageParserWithHint(b *testing.B) {
 		packets[i] = GetPackets(false, 1, 1, buf[i])[0]
 	}
 
-	parser := NewMessageParser(nil, nil, nil, 2*time.Second, false)
+	parser := NewMessageParser(nil, nil, nil, 2*time.Second, false, ProtocolHTTP)
 	parser.Start = func(pckt *Packet) (bool, bool) {
 		return false, proto.HasResponseTitle(pckt.Payload)
 	}

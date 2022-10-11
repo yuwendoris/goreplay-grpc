@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"expvar"
 	"fmt"
+	"golang.org/x/net/http2"
 	"net"
 	"time"
 
@@ -15,10 +16,10 @@ func copySlice(to []byte, skip int, from ...[]byte) ([]byte, int) {
 	for _, s := range from {
 		totalLen += len(s)
 	}
-	totalLen += skip
 
+	totalLen += skip
 	if cap(to) < totalLen {
-		diff := totalLen - cap(to)
+		diff := totalLen - len(to)
 		to = append(to, make([]byte, diff)...)
 	}
 
@@ -30,16 +31,20 @@ func copySlice(to []byte, skip int, from ...[]byte) ([]byte, int) {
 }
 
 var stats *expvar.Map
-var packetQueueLen, messageQueueLen *expvar.Int
+var packetQueueLen, messageQueueLen, streamQueueLen, connQueueLen *expvar.Int
 
 func init() {
 	packetQueueLen = new(expvar.Int)
 	messageQueueLen = new(expvar.Int)
+	streamQueueLen = new(expvar.Int)
+	connQueueLen = new(expvar.Int)
 
 	stats = expvar.NewMap("tcp")
 	stats.Init()
 	stats.Set("packet_queue", packetQueueLen)
 	stats.Set("message_queue", messageQueueLen)
+	stats.Set("stream_queue", streamQueueLen)
+	stats.Set("conn_queue", connQueueLen)
 }
 
 type Dir int
@@ -59,6 +64,8 @@ function.
 type Packet struct {
 	Direction          Dir
 	messageID          uint64
+	streamID           uint64
+	connID             uint64
 	SrcIP, DstIP       net.IP
 	Version            uint8
 	SrcPort, DstPort   uint16
@@ -70,6 +77,7 @@ type Packet struct {
 	Timestamp          time.Time
 	Payload            []byte
 	buf                []byte
+	PayloadFrame       []http2.Frame
 
 	created time.Time
 	gc      bool
@@ -210,6 +218,45 @@ func (pckt *Packet) parse(data []byte, lType, lTypeLen int, cp *gopacket.Capture
 	pckt.Payload = ndata[dOf:]
 
 	return nil
+}
+
+func (pckt *Packet)ConnId() uint64 {
+	if pckt.connID == 0 {
+		if pckt.Direction == DirIncoming {
+			pckt.connID = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
+				(uint64(ip2int(pckt.SrcIP)) + uint64(ip2int(pckt.DstIP)))
+		} else {
+			pckt.connID = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
+				(uint64(ip2int(pckt.SrcIP)) + uint64(ip2int(pckt.DstIP)))
+		}
+	}
+
+	return pckt.connID
+}
+
+func (pckt *Packet)StreamId(steamId uint32) uint64 {
+	if pckt.streamID == 0 {
+		if pckt.Direction == DirIncoming {
+			// All packets in the same message will share the same ID
+			pckt.streamID = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
+				(uint64(ip2int(pckt.SrcIP)) + uint64(ip2int(pckt.DstIP)) + uint64(steamId))
+		} else {
+			pckt.streamID = uint64(pckt.DstPort)<<48 | uint64(pckt.SrcPort)<<32 |
+				(uint64(ip2int(pckt.DstIP)) + uint64(ip2int(pckt.SrcIP)) + uint64(steamId))
+		}
+	}
+
+	return pckt.streamID
+}
+
+func (pckt *Packet)MessageIDHttp2(steamId uint32) uint64 {
+	if pckt.messageID == 0 {
+		// All packets in the same message will share the same ID
+		pckt.messageID = uint64(pckt.SrcPort)<<48 | uint64(pckt.DstPort)<<32 |
+			(uint64(ip2int(pckt.SrcIP)) + uint64(ip2int(pckt.DstIP)) + uint64(steamId))
+	}
+
+	return pckt.messageID
 }
 
 func (pckt *Packet) MessageID() uint64 {

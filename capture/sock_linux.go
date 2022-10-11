@@ -40,7 +40,7 @@ type SockRaw struct {
 	ifindex     int
 	snaplen     int
 	pollTimeout uintptr
-	frame       uint32 // current frame
+	frame       uint32 // current http2_protocol
 	buf         []byte // points to the memory space of the ring buffer shared with the kernel.
 	loopIndex   int32  // this field must filled to avoid reading packet twice on a loopback device
 }
@@ -145,7 +145,7 @@ read:
 		if e != 0 && e != unix.EINTR {
 			return buf, ci, e
 		}
-		// it might be some other frame with data!
+		// it might be some other http2_protocol with data!
 		if tpHdr.Status&unix.TP_STATUS_USER == 0 {
 			goto read
 		}

@@ -53,6 +53,8 @@ type AppSettings struct {
 	OutputFile         MultiOption   `json:"output-file"`
 	OutputFileConfig   FileOutputConfig
 
+	OutputGRPC   MultiOption   `json:"output-grpc"`
+
 	InputRAW MultiOption `json:"input_raw"`
 	RAWInputConfig
 
@@ -63,6 +65,8 @@ type AppSettings struct {
 	PrettifyHTTP bool        `json:"prettify-http"`
 
 	OutputHTTPConfig HTTPOutputConfig
+
+	HTTP2OutputConfig HTTP2OutputConfig
 
 	OutputBinary       MultiOption `json:"output-binary"`
 	OutputBinaryConfig BinaryOutputConfig
@@ -206,6 +210,8 @@ func init() {
 	flag.Var(&Settings.ModifierConfig.HeaderBasicAuthFilters, "http-basic-auth-filter", "A regexp to match the decoded basic auth string against. Requests with non-matching headers will be dropped:\n\t gor --input-raw :8080 --output-http staging.com --http-basic-auth-filter \"^customer[0-9].*\"")
 	flag.Var(&Settings.ModifierConfig.HeaderHashFilters, "http-header-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific header:\n\t gor --input-raw :8080 --output-http staging.com --http-header-limiter user-id:25%")
 	flag.Var(&Settings.ModifierConfig.ParamHashFilters, "http-param-limiter", "Takes a fraction of requests, consistently taking or rejecting a request based on the FNV32-1A hash of a specific GET param:\n\t gor --input-raw :8080 --output-http staging.com --http-param-limiter user_id:25%")
+
+	flag.Var(&Settings.OutputGRPC, "output-grpc", "Forwards incoming requests to given http address.\n\t# Redirect all incoming requests to staging.com address \n\tgor --input-raw :80 --output-grpc http://staging.com")
 
 	// default values, using for tests
 	Settings.OutputFileConfig.SizeLimit = 33554432

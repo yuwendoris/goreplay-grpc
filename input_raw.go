@@ -94,8 +94,13 @@ func (i *RAWInput) PluginRead() (*Message, error) {
 	select {
 	case <-i.quit:
 		return nil, ErrorStopped
-	case msgTCP = <-i.listener.Messages():
-		msg.Data = msgTCP.Data()
+	case msgTCP = <-i.listener.Messages(): // todo problem 这边为啥只读一次，2个message发过来一块处理
+	    fmt.Println("msgTCP", msgTCP.Stream)
+		if i.Protocol == tcp.ProtocolHTTP2 {
+			msg.Data = msgTCP.DataHttp2()
+		} else {
+			msg.Data = msgTCP.Data()
+		}
 	}
 
 	var msgType byte = ResponsePayload
