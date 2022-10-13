@@ -71,3 +71,6 @@ If you are using Gor, we are happy to add you to the list and share your story, 
 ## Author
 
 Leonid Bugaev, [@buger](https://twitter.com/buger), https://leonsbox.com
+
+## Add new network protocol support
+support grpc, use command `sudo ./gor --input-raw :8000 --output-grpc :8001` which captures grpc.
